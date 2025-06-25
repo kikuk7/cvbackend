@@ -19,7 +19,7 @@ const pool = new Pool({
 // PENTING: Ganti 'https://your-vercel-app.vercel.app' dengan URL publik Vercel Anda yang sebenarnya
 const allowedOrigins = [
   'http://localhost:3000', // Untuk pengembangan lokal
-  'https://your-vercel-app.vercel.app' // GANTI INI DENGAN URL PUBLIK VERCEL ANDA!
+  'https://cvalams.vercel.app/' // GANTI INI DENGAN URL PUBLIK VERCEL ANDA!
 ];
 
 app.use(cors({

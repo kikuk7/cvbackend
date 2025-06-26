@@ -19,7 +19,7 @@ const pool = new Pool({
 // PENTING: Ganti 'https://your-vercel-app.vercel.app' dengan URL publik Vercel Anda yang sebenarnya
 const allowedOrigins = [
   'http://localhost:3000', // Untuk pengembangan lokal
-  'https://cvalams-rizqis-projects-607b9812.vercel.app/' // GANTI INI DENGAN URL PUBLIK VERCEL ANDA!
+  'https://cvalams-rizqis-projects-607b9812.vercel.app' // <--- PERBAIKAN: Hapus garis miring di akhir!
 ];
 
 app.use(cors({
@@ -29,6 +29,7 @@ app.use(cors({
     if (!origin || allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true)
     } else {
+      console.error('CORS: Origin not allowed:', origin); // Ini akan mencetak ke log Railway
       callback(new Error('Not allowed by CORS'))
     }
   },
@@ -89,7 +90,6 @@ app.put('/api/pages/:id', async (req, res) => {
       return res.status(400).json({ message: 'ID halaman tidak valid.' });
   }
 
-  // Dapatkan semua kolom yang relevan dari body permintaan
   const {
     title, slug, hero_title, hero_video_url, hero_image_url,
     homepage_about_section_text, homepage_services_section_text,
@@ -100,12 +100,10 @@ app.put('/api/pages/:id', async (req, res) => {
     service_1_title, service_1_body, service_2_title, service_2_body,
     service_3_title, service_3_body, faq_main_title, body,
     faq_1_question, faq_1_answer, faq_2_question, faq_2_answer, faq_3_question, faq_3_answer,
-    faq_4_question, faq_4_answer, faq_5_question, faq_5_answer, images // Tambahkan faq_x dan images
+    faq_4_question, faq_4_answer, faq_5_question, faq_5_answer, images 
   } = req.body;
 
   try {
-    // Pastikan semua kolom di UPDATE query sesuai dengan 44 kolom di database Anda
-    // dan urutan parameternya cocok dengan array 'values'.
     const updateQuery = `
       UPDATE pages
       SET
@@ -126,8 +124,6 @@ app.put('/api/pages/:id', async (req, res) => {
       RETURNING *;
     `;
     
-    // Pastikan jumlah nilai di array 'values' ini adalah 42 (41 kolom data + 1 id)
-    // dan urutannya cocok dengan placeholder $1 sampai $42.
     const values = [
       title, slug, hero_title, hero_video_url, hero_image_url,
       homepage_about_section_text, homepage_services_section_text,
@@ -138,8 +134,8 @@ app.put('/api/pages/:id', async (req, res) => {
       service_1_title, service_1_body, service_2_title, service_2_body,
       service_3_title, service_3_body, faq_main_title, body,
       faq_1_question, faq_1_answer, faq_2_question, faq_2_answer, faq_3_question, faq_3_answer,
-      faq_4_question, faq_4_answer, faq_5_question, faq_5_answer, images, // Ini akan menjadi $41
-      numericId // Ini akan menjadi $42
+      faq_4_question, faq_4_answer, faq_5_question, faq_5_answer, images, 
+      numericId 
     ];
 
     const result = await pool.query(updateQuery, values);
@@ -158,7 +154,6 @@ app.put('/api/pages/:id', async (req, res) => {
 
 // POST (Create) halaman baru
 app.post('/api/pages', async (req, res) => {
-  // Pastikan Anda mendapatkan semua kolom yang relevan dari body permintaan
   const { 
     title, slug, hero_title, hero_video_url, hero_image_url,
     homepage_about_section_text, homepage_services_section_text,
@@ -169,7 +164,7 @@ app.post('/api/pages', async (req, res) => {
     service_1_title, service_1_body, service_2_title, service_2_body,
     service_3_title, service_3_body, faq_main_title, body,
     faq_1_question, faq_1_answer, faq_2_question, faq_2_answer, faq_3_question, faq_3_answer,
-    faq_4_question, faq_4_answer, faq_5_question, faq_5_answer, images // Tambahkan faq_x dan images
+    faq_4_question, faq_4_answer, faq_5_question, faq_5_answer, images 
   } = req.body;
 
   try {
@@ -177,8 +172,6 @@ app.post('/api/pages', async (req, res) => {
         return res.status(400).json({ message: 'Judul dan Slug wajib diisi.' });
     }
 
-    // Pastikan daftar kolom di INSERT query sesuai dengan 44 kolom di database
-    // dan urutan parameternya cocok dengan array 'insertValues'.
     const insertQuery = `
       INSERT INTO pages (
         title, slug, hero_title, hero_video_url, hero_image_url,
@@ -197,7 +190,6 @@ app.post('/api/pages', async (req, res) => {
       RETURNING *;
     `; 
 
-    // Pastikan jumlah nilai di array 'insertValues' ini adalah 41 (jumlah kolom data tanpa id/timestamp)
     const insertValues = [
       title, slug, hero_title, hero_video_url, hero_image_url,
       homepage_about_section_text, homepage_services_section_text,
@@ -208,7 +200,7 @@ app.post('/api/pages', async (req, res) => {
       service_1_title, service_1_body, service_2_title, service_2_body,
       service_3_title, service_3_body, faq_main_title, body,
       faq_1_question, faq_1_answer, faq_2_question, faq_2_answer, faq_3_question, faq_3_answer,
-      faq_4_question, faq_4_answer, faq_5_question, faq_5_answer, images // Ini adalah nilai ke-41
+      faq_4_question, faq_4_answer, faq_5_question, faq_5_answer, images 
     ];
 
     const result = await pool.query(insertQuery, insertValues);

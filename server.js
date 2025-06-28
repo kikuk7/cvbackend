@@ -1,12 +1,12 @@
-require('dotenv').config(); // Untuk memuat variabel lingkungan dari .env
+require('dotenv').config();
 const express = require('express');
 const { Pool } = require('pg');
-const cors = require('cors'); // Mengizinkan permintaan dari domain Nuxt.js Anda
+const cors = require('cors');
 const multer = require('multer'); // Impor Multer
 const { createClient } = require('@supabase/supabase-js'); // Impor Supabase Client
 
 const app = express();
-const port = process.env.PORT || 3001; // Gunakan port dari env, fallback ke 3001
+const port = process.env.PORT || 8080; // Pastikan ini 8080 untuk lokal Nuxt
 
 // Konfigurasi koneksi database PostgreSQL
 const pool = new Pool({
@@ -23,7 +23,7 @@ const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY; 
 const supabase = createClient(supabaseUrl, supabaseServiceRoleKey || supabaseAnonKey); 
 
-const supabaseStorageBucket = process.env.SUPABASE_STORAGE_BUCKET; 
+const supabaseStorageBucket = process.env.SUPABASE_STORAGE_BUCKET; // Nama bucket Anda
 
 // Konfigurasi Multer untuk menangani file upload (menyimpan sementara di memori)
 const upload = multer({ 
@@ -33,30 +33,27 @@ const upload = multer({
   }
 });
 
-// Middleware CORS yang dikonfigurasi secara spesifik
-// PENTING: Ganti 'https://your-vercel-app.vercel.app' dengan URL publik Vercel Anda yang sebenarnya
+// Middleware CORS
 const allowedOrigins = [
-  'http://localhost:3000', // Untuk pengembangan lokal
-  'https://cvalams-rizqis-projects-607b9812.vercel.app' // <--- PERBAIKAN: Hapus garis miring di akhir!
+  'http://localhost:3000', 
+  'https://cvalams-rizqis-projects-607b9812.vercel.app' // GANTI INI DENGAN URL PUBLIK VERCEL ANDA YANG SEBENARNYA!
 ];
 
 app.use(cors({
   origin: function (origin, callback) {
-    // Izinkan permintaan tanpa origin (misalnya permintaan dari Postman/curl)
-    // Atau jika origin ada dalam daftar yang diizinkan
     if (!origin || allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true)
     } else {
-      console.error('CORS: Origin not allowed:', origin); // Ini akan mencetak ke log Railway
+      console.error('CORS: Origin not allowed:', origin); 
       callback(new Error('Not allowed by CORS'))
     }
   },
-  methods: ['GET', 'POST', 'PUT', 'DELETE'], // Izinkan metode HTTP yang Anda gunakan
-  allowedHeaders: ['Content-Type', 'Authorization'], // Izinkan header yang digunakan
-  credentials: true // Jika Anda menggunakan cookies atau session (saat ini tidak, tapi bagus untuk masa depan)
+  methods: ['GET', 'POST', 'PUT', 'DELETE'], 
+  allowedHeaders: ['Content-Type', 'Authorization'], 
+  credentials: true 
 }));
 
-app.use(express.json()); // Mengizinkan server menerima JSON di body permintaan
+app.use(express.json()); 
 
 // --- API Routes untuk Halaman ---
 
@@ -99,7 +96,7 @@ app.get('/api/pages/:idOrSlug', async (req, res) => {
   }
 });
 
-// Endpoint untuk mengunggah gambar
+// Endpoint untuk mengunggah gambar (INI YANG PERLU DITAMBAHKAN)
 app.post('/api/upload-image', upload.single('image'), async (req, res) => {
   try {
     if (!req.file) {
@@ -107,14 +104,16 @@ app.post('/api/upload-image', upload.single('image'), async (req, res) => {
     }
 
     const file = req.file;
-    const fileName = `${Date.now()}-${file.originalname}`; // Nama file unik
-    // const filePath = `${supabaseStorageBucket}/${fileName}`; // Ini tidak digunakan langsung untuk upload method
-
+    // Buat nama file unik (misalnya, timestamp-originalfilename.ext)
+    const fileExtension = file.originalname.split('.').pop();
+    const fileName = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}.${fileExtension}`; 
+    
+    // Unggah file ke Supabase Storage
     const { data, error } = await supabase.storage
       .from(supabaseStorageBucket)
       .upload(fileName, file.buffer, {
         contentType: file.mimetype,
-        upsert: false 
+        upsert: false // Jangan menimpa jika sudah ada
       });
 
     if (error) {
@@ -123,7 +122,6 @@ app.post('/api/upload-image', upload.single('image'), async (req, res) => {
     }
 
     // Dapatkan URL publik file yang diunggah
-    // Pastikan bucket adalah public di Supabase
     const { data: publicUrlData } = supabase.storage
       .from(supabaseStorageBucket)
       .getPublicUrl(fileName);
@@ -150,6 +148,7 @@ app.put('/api/pages/:id', async (req, res) => {
       return res.status(400).json({ message: 'ID halaman tidak valid.' });
   }
 
+  // Dapatkan semua kolom yang relevan dari body permintaan
   const {
     title, slug, hero_title, hero_video_url, hero_image_url,
     homepage_about_section_text, homepage_services_section_text,
@@ -179,7 +178,7 @@ app.put('/api/pages/:id', async (req, res) => {
         service_3_title = $27, service_3_body = $28, faq_main_title = $29, body = $30,
         faq_1_question = $31, faq_1_answer = $32, faq_2_question = $33, faq_2_answer = $34, faq_3_question = $35, faq_3_answer = $36,
         faq_4_question = $37, faq_4_answer = $38, faq_5_question = $39, faq_5_answer = $40,
-        images = $41, 
+        images = $41, -- PERBAIKAN: TAMBAH KOMA SETELAH INI
         hero_video_source_type = $42, hero_image_source_type = $43, 
         updated_at = CURRENT_TIMESTAMP
       WHERE id = $44
@@ -209,7 +208,7 @@ app.put('/api/pages/:id', async (req, res) => {
   } catch (err) {
     console.error('Error updating page:', err);
     if (err.code === '23505' && err.constraint === 'pages_slug_key') {
-      return res.status(422).json({ message: 'Slug sudah digunakan.', errors: { slug: ['Slug ini sudah ada.'] } });
+      return res.status(422).json({ message: 'Slug sudah digunakan.', errors: { slug: ['Slug ini sudah ada.'] });
     }
     res.status(500).json({ message: 'Gagal menyimpan perubahan halaman.' });
   }
@@ -274,7 +273,7 @@ app.post('/api/pages', async (req, res) => {
   } catch (err) {
     console.error('Error creating page:', err);
     if (err.code === '23505' && err.constraint === 'pages_slug_key') {
-      return res.status(422).json({ message: 'Slug sudah digunakan.', errors: { slug: ['Slug ini sudah ada.'] } });
+      return res.status(422).json({ message: 'Slug sudah digunakan.', errors: { slug: ['Slug ini sudah ada.'] });
     }
     res.status(500).json({ message: 'Gagal membuat halaman baru.' });
   }

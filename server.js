@@ -1,12 +1,13 @@
-require('dotenv').config(); // Untuk memuat variabel lingkungan dari .env
+require('dotenv').config();
 const express = require('express');
 const { Pool } = require('pg');
-const cors = require('cors'); // Mengizinkan permintaan dari domain Nuxt.js Anda
+const cors = require('cors');
+const multer = require('multer');
+const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
-const port = process.env.PORT || 3001; // Gunakan port dari env, fallback ke 3001
+const port = process.env.PORT || 3001; 
 
-// Konfigurasi koneksi database PostgreSQL
 const pool = new Pool({
   user: process.env.DB_USER,
   host: process.env.DB_HOST,
@@ -15,32 +16,40 @@ const pool = new Pool({
   port: process.env.DB_PORT,
 });
 
-// Middleware CORS yang dikonfigurasi secara spesifik
-// PENTING: Ganti 'https://your-vercel-app.vercel.app' dengan URL publik Vercel Anda yang sebenarnya
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY; 
+const supabase = createClient(supabaseUrl, supabaseServiceRoleKey || supabaseAnonKey); 
+
+const supabaseStorageBucket = process.env.SUPABASE_STORAGE_BUCKET; 
+
+const upload = multer({ 
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 5 * 1024 * 1024 
+  }
+});
+
 const allowedOrigins = [
-  'http://localhost:3000', // Untuk pengembangan lokal
-  'https://cvalams-rizqis-projects-607b9812.vercel.app' // <--- PERBAIKAN: Hapus garis miring di akhir!
+  'http://localhost:3000', 
+  'https://cvalams-rizqis-projects-607b9812.vercel.app' 
 ];
 
 app.use(cors({
   origin: function (origin, callback) {
-    // Izinkan permintaan tanpa origin (misalnya permintaan dari Postman/curl)
-    // Atau jika origin ada dalam daftar yang diizinkan
     if (!origin || allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true)
     } else {
-      console.error('CORS: Origin not allowed:', origin); // Ini akan mencetak ke log Railway
+      console.error('CORS: Origin not allowed:', origin); 
       callback(new Error('Not allowed by CORS'))
     }
   },
-  methods: ['GET', 'POST', 'PUT', 'DELETE'], // Izinkan metode HTTP yang Anda gunakan
-  allowedHeaders: ['Content-Type', 'Authorization'], // Izinkan header yang digunakan
-  credentials: true // Jika Anda menggunakan cookies atau session (saat ini tidak, tapi bagus untuk masa depan)
+  methods: ['GET', 'POST', 'PUT', 'DELETE'], 
+  allowedHeaders: ['Content-Type', 'Authorization'], 
+  credentials: true 
 }));
 
-app.use(express.json()); // Mengizinkan server menerima JSON di body permintaan
-
-// --- API Routes untuk Halaman ---
+app.use(express.json()); 
 
 // GET semua halaman
 app.get('/api/pages', async (req, res) => {
@@ -81,6 +90,45 @@ app.get('/api/pages/:idOrSlug', async (req, res) => {
   }
 });
 
+// Endpoint untuk mengunggah gambar
+app.post('/api/upload-image', upload.single('image'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: 'Tidak ada file yang diunggah.' });
+    }
+
+    const file = req.file;
+    const fileName = `${Date.now()}-${file.originalname}`; // Nama file unik
+
+    const { data, error } = await supabase.storage
+      .from(supabaseStorageBucket)
+      .upload(fileName, file.buffer, {
+        contentType: file.mimetype,
+        upsert: false 
+      });
+
+    if (error) {
+      console.error('Supabase upload error:', error);
+      return res.status(500).json({ message: 'Gagal mengunggah file ke Supabase Storage.', error: error.message });
+    }
+
+    const { data: publicUrlData } = supabase.storage
+      .from(supabaseStorageBucket)
+      .getPublicUrl(fileName);
+    
+    if (!publicUrlData || !publicUrlData.publicUrl) {
+      throw new Error('Gagal mendapatkan URL publik setelah upload.');
+    }
+
+    res.status(200).json({ publicUrl: publicUrlData.publicUrl });
+
+  } catch (err) {
+    console.error('Upload endpoint error:', err);
+    res.status(500).json({ message: 'Kesalahan server saat mengunggah gambar.', error: err.message });
+  }
+});
+
+
 // PUT (Update) halaman berdasarkan ID
 app.put('/api/pages/:id', async (req, res) => {
   const { id } = req.params; 
@@ -100,7 +148,8 @@ app.put('/api/pages/:id', async (req, res) => {
     service_1_title, service_1_body, service_2_title, service_2_body,
     service_3_title, service_3_body, faq_main_title, body,
     faq_1_question, faq_1_answer, faq_2_question, faq_2_answer, faq_3_question, faq_3_answer,
-    faq_4_question, faq_4_answer, faq_5_question, faq_5_answer, images 
+    faq_4_question, faq_4_answer, faq_5_question, faq_5_answer, images,
+    hero_video_source_type, hero_image_source_type 
   } = req.body;
 
   try {
@@ -118,9 +167,10 @@ app.put('/api/pages/:id', async (req, res) => {
         service_3_title = $27, service_3_body = $28, faq_main_title = $29, body = $30,
         faq_1_question = $31, faq_1_answer = $32, faq_2_question = $33, faq_2_answer = $34, faq_3_question = $35, faq_3_answer = $36,
         faq_4_question = $37, faq_4_answer = $38, faq_5_question = $39, faq_5_answer = $40,
-        images = $41,
+        images = $41, -- PERBAIKAN: TAMBAH KOMA SETELAH INI
+        hero_video_source_type = $42, hero_image_source_type = $43, -- KOLOM BARU
         updated_at = CURRENT_TIMESTAMP
-      WHERE id = $42
+      WHERE id = $44
       RETURNING *;
     `;
     
@@ -135,6 +185,7 @@ app.put('/api/pages/:id', async (req, res) => {
       service_3_title, service_3_body, faq_main_title, body,
       faq_1_question, faq_1_answer, faq_2_question, faq_2_answer, faq_3_question, faq_3_answer,
       faq_4_question, faq_4_answer, faq_5_question, faq_5_answer, images, 
+      hero_video_source_type, hero_image_source_type, 
       numericId 
     ];
 
@@ -164,7 +215,8 @@ app.post('/api/pages', async (req, res) => {
     service_1_title, service_1_body, service_2_title, service_2_body,
     service_3_title, service_3_body, faq_main_title, body,
     faq_1_question, faq_1_answer, faq_2_question, faq_2_answer, faq_3_question, faq_3_answer,
-    faq_4_question, faq_4_answer, faq_5_question, faq_5_answer, images 
+    faq_4_question, faq_4_answer, faq_5_question, faq_5_answer, images,
+    hero_video_source_type, hero_image_source_type 
   } = req.body;
 
   try {
@@ -184,9 +236,10 @@ app.post('/api/pages', async (req, res) => {
         service_3_title, service_3_body, faq_main_title, body,
         faq_1_question, faq_1_answer, faq_2_question, faq_2_answer, faq_3_question, faq_3_answer,
         faq_4_question, faq_4_answer, faq_5_question, faq_5_answer, images,
+        hero_video_source_type, hero_image_source_type, 
         created_at, updated_at
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
       RETURNING *;
     `; 
 
@@ -200,7 +253,8 @@ app.post('/api/pages', async (req, res) => {
       service_1_title, service_1_body, service_2_title, service_2_body,
       service_3_title, service_3_body, faq_main_title, body,
       faq_1_question, faq_1_answer, faq_2_question, faq_2_answer, faq_3_question, faq_3_answer,
-      faq_4_question, faq_4_answer, faq_5_question, faq_5_answer, images 
+      faq_4_question, faq_4_answer, faq_5_question, faq_5_answer, images,
+      hero_video_source_type, hero_image_source_type 
     ];
 
     const result = await pool.query(insertQuery, insertValues);
@@ -217,27 +271,27 @@ app.post('/api/pages', async (req, res) => {
 
 // DELETE halaman
 app.delete('/api/pages/:id', async (req, res) => {
-  const { id } = req.params;
-  const numericId = parseInt(id); 
+  const { id } = req.params;
+  const numericId = parseInt(id); 
 
-  if (isNaN(numericId)) {
-      return res.status(400).json({ message: 'ID halaman tidak valid.' });
-  }
+  if (isNaN(numericId)) {
+      return res.status(400).json({ message: 'ID halaman tidak valid.' });
+  }
 
-  try {
-    const result = await pool.query('DELETE FROM pages WHERE id = $1 RETURNING *', [numericId]);
-    if (result.rows.length === 0) {
-      return res.status(404).json({ message: 'Halaman tidak ditemukan.' });
-    }
-    res.json({ message: 'Halaman berhasil dihapus.' });
-  } catch (err) {
-    console.error('Error deleting page:', err);
-    res.status(500).json({ message: 'Gagal menghapus halaman.' });
-  }
+  try {
+    const result = await pool.query('DELETE FROM pages WHERE id = $1 RETURNING *', [numericId]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Halaman tidak ditemukan.' });
+    }
+    res.json({ message: 'Halaman berhasil dihapus.' });
+  } catch (err) {
+    console.error('Error deleting page:', err);
+    res.status(500).json({ message: 'Gagal menghapus halaman.' });
+  }
 });
 
 
 // Start server
 app.listen(port, () => {
-  console.log(`Backend API berjalan di http://localhost:${port}`);
+  console.log(`Backend API berjalan di http://localhost:${port}`);
 });

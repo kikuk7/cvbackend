@@ -32,7 +32,7 @@ const upload = multer({
 
 const allowedOrigins = [
   'http://localhost:3000', 
-  'https://cvalams-gjegff8f8-rizqis-projects-607b9812.vercel.app' 
+  'https://cvalams-rizqis-projects-607b9812.vercel.app' 
 ];
 
 app.use(cors({

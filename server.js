@@ -37,7 +37,7 @@ const upload = multer({
 // PENTING: Ganti 'https://your-vercel-app.vercel.app' dengan URL publik Vercel Anda yang sebenarnya
 const allowedOrigins = [
   'http://localhost:3000', // Untuk pengembangan lokal
-  'https://cvalams-rizqis-projects-607b9812.vercel.app/' // <--- PERBAIKAN: Hapus garis miring di akhir!
+  'https://cvalams-rizqis-projects-607b9812.vercel.app' // <--- PERBAIKAN: Hapus garis miring di akhir!
 ];
 
 app.use(cors({

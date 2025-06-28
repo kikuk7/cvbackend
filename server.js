@@ -1,13 +1,14 @@
-require('dotenv').config();
+require('dotenv').config(); // Untuk memuat variabel lingkungan dari .env
 const express = require('express');
 const { Pool } = require('pg');
-const cors = require('cors');
-const multer = require('multer');
-const { createClient } = require('@supabase/supabase-js');
+const cors = require('cors'); // Mengizinkan permintaan dari domain Nuxt.js Anda
+const multer = require('multer'); // Impor Multer
+const { createClient } = require('@supabase/supabase-js'); // Impor Supabase Client
 
 const app = express();
-const port = process.env.PORT || 3001; 
+const port = process.env.PORT || 3001; // Gunakan port dari env, fallback ke 3001
 
+// Konfigurasi koneksi database PostgreSQL
 const pool = new Pool({
   user: process.env.DB_USER,
   host: process.env.DB_HOST,
@@ -16,6 +17,7 @@ const pool = new Pool({
   port: process.env.DB_PORT,
 });
 
+// Konfigurasi Supabase Client untuk Storage
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY; 
@@ -23,33 +25,40 @@ const supabase = createClient(supabaseUrl, supabaseServiceRoleKey || supabaseAno
 
 const supabaseStorageBucket = process.env.SUPABASE_STORAGE_BUCKET; 
 
+// Konfigurasi Multer untuk menangani file upload (menyimpan sementara di memori)
 const upload = multer({ 
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 5 * 1024 * 1024 
+    fileSize: 5 * 1024 * 1024 // Batasi ukuran file hingga 5MB
   }
 });
 
+// Middleware CORS yang dikonfigurasi secara spesifik
+// PENTING: Ganti 'https://your-vercel-app.vercel.app' dengan URL publik Vercel Anda yang sebenarnya
 const allowedOrigins = [
-  'http://localhost:3000', 
-  'https://cvalams-rizqis-projects-607b9812.vercel.app' 
+  'http://localhost:3000', // Untuk pengembangan lokal
+  'https://cvalams-gjegff8f8-rizqis-projects-607b9812.vercel.app' // <--- PERBAIKAN: Hapus garis miring di akhir!
 ];
 
 app.use(cors({
   origin: function (origin, callback) {
+    // Izinkan permintaan tanpa origin (misalnya permintaan dari Postman/curl)
+    // Atau jika origin ada dalam daftar yang diizinkan
     if (!origin || allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true)
     } else {
-      console.error('CORS: Origin not allowed:', origin); 
+      console.error('CORS: Origin not allowed:', origin); // Ini akan mencetak ke log Railway
       callback(new Error('Not allowed by CORS'))
     }
   },
-  methods: ['GET', 'POST', 'PUT', 'DELETE'], 
-  allowedHeaders: ['Content-Type', 'Authorization'], 
-  credentials: true 
+  methods: ['GET', 'POST', 'PUT', 'DELETE'], // Izinkan metode HTTP yang Anda gunakan
+  allowedHeaders: ['Content-Type', 'Authorization'], // Izinkan header yang digunakan
+  credentials: true // Jika Anda menggunakan cookies atau session (saat ini tidak, tapi bagus untuk masa depan)
 }));
 
-app.use(express.json()); 
+app.use(express.json()); // Mengizinkan server menerima JSON di body permintaan
+
+// --- API Routes untuk Halaman ---
 
 // GET semua halaman
 app.get('/api/pages', async (req, res) => {
@@ -99,6 +108,7 @@ app.post('/api/upload-image', upload.single('image'), async (req, res) => {
 
     const file = req.file;
     const fileName = `${Date.now()}-${file.originalname}`; // Nama file unik
+    // const filePath = `${supabaseStorageBucket}/${fileName}`; // Ini tidak digunakan langsung untuk upload method
 
     const { data, error } = await supabase.storage
       .from(supabaseStorageBucket)
@@ -112,6 +122,8 @@ app.post('/api/upload-image', upload.single('image'), async (req, res) => {
       return res.status(500).json({ message: 'Gagal mengunggah file ke Supabase Storage.', error: error.message });
     }
 
+    // Dapatkan URL publik file yang diunggah
+    // Pastikan bucket adalah public di Supabase
     const { data: publicUrlData } = supabase.storage
       .from(supabaseStorageBucket)
       .getPublicUrl(fileName);
@@ -167,8 +179,8 @@ app.put('/api/pages/:id', async (req, res) => {
         service_3_title = $27, service_3_body = $28, faq_main_title = $29, body = $30,
         faq_1_question = $31, faq_1_answer = $32, faq_2_question = $33, faq_2_answer = $34, faq_3_question = $35, faq_3_answer = $36,
         faq_4_question = $37, faq_4_answer = $38, faq_5_question = $39, faq_5_answer = $40,
-        images = $41, -- PERBAIKAN: TAMBAH KOMA SETELAH INI
-        hero_video_source_type = $42, hero_image_source_type = $43, -- KOLOM BARU
+        images = $41, 
+        hero_video_source_type = $42, hero_image_source_type = $43, 
         updated_at = CURRENT_TIMESTAMP
       WHERE id = $44
       RETURNING *;
@@ -271,27 +283,27 @@ app.post('/api/pages', async (req, res) => {
 
 // DELETE halaman
 app.delete('/api/pages/:id', async (req, res) => {
-  const { id } = req.params;
-  const numericId = parseInt(id); 
+  const { id } = req.params;
+  const numericId = parseInt(id); 
 
-  if (isNaN(numericId)) {
-      return res.status(400).json({ message: 'ID halaman tidak valid.' });
-  }
+  if (isNaN(numericId)) {
+      return res.status(400).json({ message: 'ID halaman tidak valid.' });
+  }
 
-  try {
-    const result = await pool.query('DELETE FROM pages WHERE id = $1 RETURNING *', [numericId]);
-    if (result.rows.length === 0) {
-      return res.status(404).json({ message: 'Halaman tidak ditemukan.' });
-    }
-    res.json({ message: 'Halaman berhasil dihapus.' });
-  } catch (err) {
-    console.error('Error deleting page:', err);
-    res.status(500).json({ message: 'Gagal menghapus halaman.' });
-  }
+  try {
+    const result = await pool.query('DELETE FROM pages WHERE id = $1 RETURNING *', [numericId]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Halaman tidak ditemukan.' });
+    }
+    res.json({ message: 'Halaman berhasil dihapus.' });
+  } catch (err) {
+    console.error('Error deleting page:', err);
+    res.status(500).json({ message: 'Gagal menghapus halaman.' });
+  }
 });
 
 
 // Start server
 app.listen(port, () => {
-  console.log(`Backend API berjalan di http://localhost:${port}`);
+  console.log(`Backend API berjalan di http://localhost:${port}`);
 });

@@ -2,13 +2,12 @@ require('dotenv').config();
 const express = require('express');
 const { Pool } = require('pg');
 const cors = require('cors');
-const multer = require('multer'); // Impor Multer
-const { createClient } = require('@supabase/supabase-js'); // Impor Supabase Client
+const multer = require('multer');
+const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
-const port = process.env.PORT || 8080; // Pastikan ini 8080 untuk lokal Nuxt
+const port = process.env.PORT || 8080; // Sesuaikan dengan port lokal Nuxt Anda atau 3001
 
-// Konfigurasi koneksi database PostgreSQL
 const pool = new Pool({
   user: process.env.DB_USER,
   host: process.env.DB_HOST,
@@ -17,26 +16,23 @@ const pool = new Pool({
   port: process.env.DB_PORT,
 });
 
-// Konfigurasi Supabase Client untuk Storage
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY; 
 const supabase = createClient(supabaseUrl, supabaseServiceRoleKey || supabaseAnonKey); 
 
-const supabaseStorageBucket = process.env.SUPABASE_STORAGE_BUCKET; // Nama bucket Anda
+const supabaseStorageBucket = process.env.SUPABASE_STORAGE_BUCKET; 
 
-// Konfigurasi Multer untuk menangani file upload (menyimpan sementara di memori)
 const upload = multer({ 
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 5 * 1024 * 1024 // Batasi ukuran file hingga 5MB
+    fileSize: 5 * 1024 * 1024 
   }
 });
 
-// Middleware CORS
 const allowedOrigins = [
   'http://localhost:3000', 
-  'https://cvalams-rizqis-projects-607b9812.vercel.app' // GANTI INI DENGAN URL PUBLIK VERCEL ANDA YANG SEBENARNYA!
+  'https://cvalams-gjegff8f8-rizqis-projects-607b9812.vercel.app' 
 ];
 
 app.use(cors({
@@ -54,8 +50,6 @@ app.use(cors({
 }));
 
 app.use(express.json()); 
-
-// --- API Routes untuk Halaman ---
 
 // GET semua halaman
 app.get('/api/pages', async (req, res) => {
@@ -96,7 +90,7 @@ app.get('/api/pages/:idOrSlug', async (req, res) => {
   }
 });
 
-// Endpoint untuk mengunggah gambar (INI YANG PERLU DITAMBAHKAN)
+// Endpoint untuk mengunggah gambar
 app.post('/api/upload-image', upload.single('image'), async (req, res) => {
   try {
     if (!req.file) {
@@ -104,16 +98,14 @@ app.post('/api/upload-image', upload.single('image'), async (req, res) => {
     }
 
     const file = req.file;
-    // Buat nama file unik (misalnya, timestamp-originalfilename.ext)
     const fileExtension = file.originalname.split('.').pop();
     const fileName = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}.${fileExtension}`; 
     
-    // Unggah file ke Supabase Storage
     const { data, error } = await supabase.storage
       .from(supabaseStorageBucket)
       .upload(fileName, file.buffer, {
         contentType: file.mimetype,
-        upsert: false // Jangan menimpa jika sudah ada
+        upsert: false 
       });
 
     if (error) {
@@ -121,7 +113,6 @@ app.post('/api/upload-image', upload.single('image'), async (req, res) => {
       return res.status(500).json({ message: 'Gagal mengunggah file ke Supabase Storage.', error: error.message });
     }
 
-    // Dapatkan URL publik file yang diunggah
     const { data: publicUrlData } = supabase.storage
       .from(supabaseStorageBucket)
       .getPublicUrl(fileName);
@@ -148,7 +139,6 @@ app.put('/api/pages/:id', async (req, res) => {
       return res.status(400).json({ message: 'ID halaman tidak valid.' });
   }
 
-  // Dapatkan semua kolom yang relevan dari body permintaan
   const {
     title, slug, hero_title, hero_video_url, hero_image_url,
     homepage_about_section_text, homepage_services_section_text,
@@ -178,7 +168,7 @@ app.put('/api/pages/:id', async (req, res) => {
         service_3_title = $27, service_3_body = $28, faq_main_title = $29, body = $30,
         faq_1_question = $31, faq_1_answer = $32, faq_2_question = $33, faq_2_answer = $34, faq_3_question = $35, faq_3_answer = $36,
         faq_4_question = $37, faq_4_answer = $38, faq_5_question = $39, faq_5_answer = $40,
-        images = $41, -- PERBAIKAN: TAMBAH KOMA SETELAH INI
+        images = $41, 
         hero_video_source_type = $42, hero_image_source_type = $43, 
         updated_at = CURRENT_TIMESTAMP
       WHERE id = $44
@@ -208,7 +198,7 @@ app.put('/api/pages/:id', async (req, res) => {
   } catch (err) {
     console.error('Error updating page:', err);
     if (err.code === '23505' && err.constraint === 'pages_slug_key') {
-      return res.status(422).json({ message: 'Slug sudah digunakan.', errors: { slug: ['Slug ini sudah ada.'] });
+      return res.status(422).json({ message: 'Slug sudah digunakan.', errors: { slug: ['Slug ini sudah ada.'] } });
     }
     res.status(500).json({ message: 'Gagal menyimpan perubahan halaman.' });
   }
@@ -273,7 +263,7 @@ app.post('/api/pages', async (req, res) => {
   } catch (err) {
     console.error('Error creating page:', err);
     if (err.code === '23505' && err.constraint === 'pages_slug_key') {
-      return res.status(422).json({ message: 'Slug sudah digunakan.', errors: { slug: ['Slug ini sudah ada.'] });
+      return res.status(422).json({ message: 'Slug sudah digunakan.', errors: { slug: ['Slug ini sudah ada.'] } });
     }
     res.status(500).json({ message: 'Gagal membuat halaman baru.' });
   }
@@ -282,27 +272,27 @@ app.post('/api/pages', async (req, res) => {
 
 // DELETE halaman
 app.delete('/api/pages/:id', async (req, res) => {
-  const { id } = req.params;
-  const numericId = parseInt(id); 
+  const { id } = req.params;
+  const numericId = parseInt(id); 
 
-  if (isNaN(numericId)) {
-      return res.status(400).json({ message: 'ID halaman tidak valid.' });
-  }
+  if (isNaN(numericId)) {
+      return res.status(400).json({ message: 'ID halaman tidak valid.' });
+  }
 
-  try {
-    const result = await pool.query('DELETE FROM pages WHERE id = $1 RETURNING *', [numericId]);
-    if (result.rows.length === 0) {
-      return res.status(404).json({ message: 'Halaman tidak ditemukan.' });
-    }
-    res.json({ message: 'Halaman berhasil dihapus.' });
-  } catch (err) {
-    console.error('Error deleting page:', err);
-    res.status(500).json({ message: 'Gagal menghapus halaman.' });
-  }
+  try {
+    const result = await pool.query('DELETE FROM pages WHERE id = $1 RETURNING *', [numericId]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Halaman tidak ditemukan.' });
+    }
+    res.json({ message: 'Halaman berhasil dihapus.' });
+  } catch (err) {
+    console.error('Error deleting page:', err);
+    res.status(500).json({ message: 'Gagal menghapus halaman.' });
+  }
 });
 
 
 // Start server
 app.listen(port, () => {
-  console.log(`Backend API berjalan di http://localhost:${port}`);
+  console.log(`Backend API berjalan di http://localhost:${port}`);
 });

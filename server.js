@@ -54,47 +54,6 @@ app.use(cors({
 
 app.use(express.json());
 
-// --- START: Middleware untuk mencatat pengunjung ---
-app.use(async (req, res, next) => {
-    // Lewati panggilan API (yang dimulai dengan /api/) dan file statis
-    // agar tidak mencatat kunjungan ganda atau request aset
-    if (req.path.startsWith('/api') || req.path.startsWith('/static')) {
-        return next();
-    }
-
-    // Mendapatkan alamat IP klien
-    // Menggunakan req.headers['x-forwarded-for'] untuk aplikasi di belakang proxy/load balancer (seperti Vercel)
-    const ipAddress = req.headers['x-forwarded-for']?.split(',').shift() || req.ip || req.socket.remoteAddress;
-
-    if (!ipAddress) {
-        console.warn('Tidak dapat menentukan alamat IP untuk pencatatan pengunjung.');
-        return next();
-    }
-
-    try {
-        // Query untuk mencatat atau memperbarui kunjungan
-        // Jika ip_address sudah ada untuk hari ini, hanya perbarui last_active.
-        // Jika belum ada, masukkan entri baru.
-        // Ini mengasumsikan 'ip_address' adalah kolom unik di tabel 'visitors'.
-        // Jika tidak unik, 'ON CONFLICT (ip_address)' akan gagal atau Anda harus mengubah strategi.
-        await pool.query(
-            `INSERT INTO visitors (ip_address, visit_date, last_active)
-             VALUES ($1, CURRENT_DATE, NOW())
-             ON CONFLICT (ip_address) DO UPDATE
-             SET last_active = NOW(), visit_date = CURRENT_DATE
-             WHERE visitors.ip_address = $1;`,
-            [ipAddress]
-        );
-        // console.log(`Pengunjung dicatat: ${ipAddress}`); // Untuk debugging
-    } catch (err) {
-        // Log error tetapi jangan menghentikan request utama
-        console.error('Kesalahan saat mencatat pengunjung ke DB:', err);
-    }
-    next();
-});
-// --- END: Middleware untuk mencatat pengunjung ---
-
-
 // --- DAFTAR KOLOM LENGKAP DARI TABEL PAGES ANDA (50 kolom setelah penambahan) ---
 // Ini harus sama persis dengan yang Anda dapatkan dari pgAdmin/Supabase Table Editor.
 // Urutan dan nama harus sesuai!
@@ -210,11 +169,13 @@ app.put('/api/pages/:id', async (req, res) => {
     contact_location_title, contact_location_body, contact_email_title,
     contact_email_address, contact_whatsapp_number, main_intro_body,
     service_1_title, service_1_body,
+    // --- START: Perubahan di sini untuk service_X_image_url ---
     service_1_image_url, // Ditambahkan
     service_2_title, service_2_body,
     service_2_image_url, // Ditambahkan
     service_3_title, service_3_body,
     service_3_image_url, // Ditambahkan
+    // --- END: Perubahan di sini ---
     faq_main_title, body,
     faq_1_question, faq_1_answer, faq_2_question, faq_2_answer, faq_3_question, faq_3_answer,
     faq_4_question, faq_4_answer, faq_5_question, faq_5_answer, images,
@@ -303,11 +264,13 @@ app.post('/api/pages', async (req, res) => {
     contact_location_title, contact_location_body, contact_email_title,
     contact_email_address, contact_whatsapp_number, main_intro_body,
     service_1_title, service_1_body,
+    // --- START: Perubahan di sini untuk service_X_image_url di POST ---
     service_1_image_url, // Ditambahkan
     service_2_title, service_2_body,
     service_2_image_url, // Ditambahkan
     service_3_title, service_3_body,
     service_3_image_url, // Ditambahkan
+    // --- END: Perubahan di sini ---
     faq_main_title, body,
     faq_1_question, faq_1_answer, faq_2_question, faq_2_answer, faq_3_question, faq_3_answer,
     faq_4_question, faq_4_answer, faq_5_question, faq_5_answer, images,
@@ -408,3 +371,4 @@ app.delete('/api/pages/:id', async (req, res) => {
 app.listen(port, () => {
   console.log(`Backend API berjalan di http://localhost:${port}`);
 });
+

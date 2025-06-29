@@ -150,10 +150,15 @@ app.put('/api/pages/:id', async (req, res) => {
     service_3_title, service_3_body, faq_main_title, body,
     faq_1_question, faq_1_answer, faq_2_question, faq_2_answer, faq_3_question, faq_3_answer,
     faq_4_question, faq_4_answer, faq_5_question, faq_5_answer, images,
-    hero_video_source_type, hero_image_source_type 
+    hero_video_source_type, hero_image_source_type,
+    // KOLOM BARU UNTUK GAMBAR BAWAH BERANDA
+    homepage_bottom_image_1_url, homepage_bottom_image_2_url, homepage_bottom_image_3_url
   } = req.body;
 
   try {
+    // Pastikan semua kolom di UPDATE query sesuai dengan 44 + 3 = 47 kolom di database Anda
+    // dan urutan parameternya cocok dengan array 'values'.
+    // Placeholder akan menjadi $1 sampai $46 (43 kolom data + 3 kolom baru) + $47 (id)
     const updateQuery = `
       UPDATE pages
       SET
@@ -169,12 +174,15 @@ app.put('/api/pages/:id', async (req, res) => {
         faq_1_question = $31, faq_1_answer = $32, faq_2_question = $33, faq_2_answer = $34, faq_3_question = $35, faq_3_answer = $36,
         faq_4_question = $37, faq_4_answer = $38, faq_5_question = $39, faq_5_answer = $40,
         images = $41, 
-        hero_video_source_type = $42, hero_image_source_type = $43, 
+        hero_video_source_type = $42, hero_image_source_type = $43,
+        homepage_bottom_image_1_url = $44, homepage_bottom_image_2_url = $45, homepage_bottom_image_3_url = $46, -- KOLOM BARU
         updated_at = CURRENT_TIMESTAMP
-      WHERE id = $44
+      WHERE id = $47 -- Ini akan menerima nilai 'id' yang sudah di-parse ke integer
       RETURNING *;
     `;
     
+    // Pastikan jumlah nilai di array 'values' ini adalah 47 (43 kolom data + 3 kolom baru + 1 id)
+    // dan urutannya cocok dengan placeholder $1 sampai $47.
     const values = [
       title, slug, hero_title, hero_video_url, hero_image_url,
       homepage_about_section_text, homepage_services_section_text,
@@ -186,7 +194,8 @@ app.put('/api/pages/:id', async (req, res) => {
       service_3_title, service_3_body, faq_main_title, body,
       faq_1_question, faq_1_answer, faq_2_question, faq_2_answer, faq_3_question, faq_3_answer,
       faq_4_question, faq_4_answer, faq_5_question, faq_5_answer, images, 
-      hero_video_source_type, hero_image_source_type, 
+      hero_video_source_type, hero_image_source_type,
+      homepage_bottom_image_1_url, homepage_bottom_image_2_url, homepage_bottom_image_3_url, // KOLOM BARU
       numericId 
     ];
 
@@ -217,7 +226,9 @@ app.post('/api/pages', async (req, res) => {
     service_3_title, service_3_body, faq_main_title, body,
     faq_1_question, faq_1_answer, faq_2_question, faq_2_answer, faq_3_question, faq_3_answer,
     faq_4_question, faq_4_answer, faq_5_question, faq_5_answer, images,
-    hero_video_source_type, hero_image_source_type 
+    hero_video_source_type, hero_image_source_type,
+    // KOLOM BARU UNTUK GAMBAR BAWAH BERANDA
+    homepage_bottom_image_1_url, homepage_bottom_image_2_url, homepage_bottom_image_3_url
   } = req.body;
 
   try {
@@ -225,6 +236,9 @@ app.post('/api/pages', async (req, res) => {
         return res.status(400).json({ message: 'Judul dan Slug wajib diisi.' });
     }
 
+    // Pastikan daftar kolom di INSERT query sesuai dengan total kolom di database
+    // Total kolom di DB sekarang 44 (lama) + 3 (baru) = 47
+    // Placeholder $1 sampai $46 (43 data lama + 3 baru) + CURRENT_TIMESTAMP * 2
     const insertQuery = `
       INSERT INTO pages (
         title, slug, hero_title, hero_video_url, hero_image_url,
@@ -238,9 +252,10 @@ app.post('/api/pages', async (req, res) => {
         faq_1_question, faq_1_answer, faq_2_question, faq_2_answer, faq_3_question, faq_3_answer,
         faq_4_question, faq_4_answer, faq_5_question, faq_5_answer, images,
         hero_video_source_type, hero_image_source_type, 
+        homepage_bottom_image_1_url, homepage_bottom_image_2_url, homepage_bottom_image_3_url, -- KOLOM BARU
         created_at, updated_at
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
       RETURNING *;
     `; 
 
@@ -255,7 +270,8 @@ app.post('/api/pages', async (req, res) => {
       service_3_title, service_3_body, faq_main_title, body,
       faq_1_question, faq_1_answer, faq_2_question, faq_2_answer, faq_3_question, faq_3_answer,
       faq_4_question, faq_4_answer, faq_5_question, faq_5_answer, images,
-      hero_video_source_type, hero_image_source_type 
+      hero_video_source_type, hero_image_source_type,
+      homepage_bottom_image_1_url, homepage_bottom_image_2_url, homepage_bottom_image_3_url // KOLOM BARU
     ];
 
     const result = await pool.query(insertQuery, insertValues);

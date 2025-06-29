@@ -371,3 +371,52 @@ app.delete('/api/pages/:id', async (req, res) => {
 app.listen(port, () => {
   console.log(`Backend API berjalan di http://localhost:${port}`);
 });
+
+// server.js (Tambahkan di bawah endpoint pages)
+app.get('/api/visitor-stats', async (req, res) => {
+  try {
+    // Logika untuk mengambil data statistik dari database Anda
+    // Ini adalah contoh placeholder, Anda harus menggantinya dengan query DB yang nyata
+    const onlineUsersResult = await pool.query("SELECT COUNT(DISTINCT ip_address) FROM visitors WHERE last_active > NOW() - INTERVAL '5 minutes'");
+    const todayVisitorsResult = await pool.query("SELECT COUNT(DISTINCT ip_address) FROM visitors WHERE visit_date = CURRENT_DATE");
+    const totalVisitorsResult = await pool.query("SELECT COUNT(DISTINCT ip_address) FROM visitors");
+
+    const online = parseInt(onlineUsersResult.rows[0].count) || 0;
+    const today = parseInt(todayVisitorsResult.rows[0].count) || 0;
+    const total = parseInt(totalVisitorsResult.rows[0].count) || 0;
+
+    res.json({
+      onlineUsers: online,
+      todayVisitors: today,
+      totalVisitors: total
+    });
+  } catch (err) {
+    console.error('Error fetching visitor stats:', err);
+    res.status(500).json({ message: 'Gagal mengambil statistik pengunjung.' });
+  }
+});
+
+// Anda juga perlu middleware untuk mencatat setiap kunjungan
+// Contoh sederhana:
+app.use(async (req, res, next) => {
+    if (req.path.startsWith('/api')) { // Hindari mencatat panggilan API itu sendiri
+        return next();
+    }
+
+    const ipAddress = req.ip || req.connection.remoteAddress;
+    try {
+        // Catat atau perbarui kunjungan di database
+        // Misalnya: upsert ip_address dan last_active, atau insert daily count
+        await pool.query(
+            `INSERT INTO visitors (ip_address, visit_date, last_active)
+             VALUES ($1, CURRENT_DATE, NOW())
+             ON CONFLICT (ip_address) DO UPDATE
+             SET last_active = NOW(), visit_date = CURRENT_DATE
+             WHERE visitors.ip_address = $1;`,
+            [ipAddress]
+        );
+    } catch (err) {
+        console.error('Error logging visitor:', err);
+    }
+    next();
+});

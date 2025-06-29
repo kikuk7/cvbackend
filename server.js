@@ -1,12 +1,15 @@
+// server.js
+
 require('dotenv').config();
 const express = require('express');
 const { Pool } = require('pg');
 const cors = require('cors');
 const multer = require('multer');
 const { createClient } = require('@supabase/supabase-js');
+const { v4: uuidv4 } = require('uuid'); // Impor v4 dari uuid
 
 const app = express();
-const port = process.env.PORT || 8080; // Sesuaikan dengan port lokal Nuxt Anda atau 3001
+const port = process.env.PORT || 8080; 
 
 const pool = new Pool({
   user: process.env.DB_USER,
@@ -32,7 +35,7 @@ const upload = multer({
 
 const allowedOrigins = [
   'http://localhost:3000', 
-  'https://cvalams-rizqis-projects-607b9812.vercel.app' 
+  'https://cvalams-gjegff8f8-rizqis-projects-607b9812.vercel.app' 
 ];
 
 app.use(cors({
@@ -99,7 +102,7 @@ app.post('/api/upload-image', upload.single('image'), async (req, res) => {
 
     const file = req.file;
     const fileExtension = file.originalname.split('.').pop();
-    const fileName = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}.${fileExtension}`; 
+    const fileName = `${uuidv4()}.${fileExtension}`; // PERBAIKAN: Menggunakan UUID untuk nama file unik
     
     const { data, error } = await supabase.storage
       .from(supabaseStorageBucket)
@@ -272,27 +275,27 @@ app.post('/api/pages', async (req, res) => {
 
 // DELETE halaman
 app.delete('/api/pages/:id', async (req, res) => {
-  const { id } = req.params;
-  const numericId = parseInt(id); 
+  const { id } = req.params;
+  const numericId = parseInt(id); 
 
-  if (isNaN(numericId)) {
-      return res.status(400).json({ message: 'ID halaman tidak valid.' });
-  }
+  if (isNaN(numericId)) {
+      return res.status(400).json({ message: 'ID halaman tidak valid.' });
+  }
 
-  try {
-    const result = await pool.query('DELETE FROM pages WHERE id = $1 RETURNING *', [numericId]);
-    if (result.rows.length === 0) {
-      return res.status(404).json({ message: 'Halaman tidak ditemukan.' });
-    }
-    res.json({ message: 'Halaman berhasil dihapus.' });
-  } catch (err) {
-    console.error('Error deleting page:', err);
-    res.status(500).json({ message: 'Gagal menghapus halaman.' });
-  }
+  try {
+    const result = await pool.query('DELETE FROM pages WHERE id = $1 RETURNING *', [numericId]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Halaman tidak ditemukan.' });
+    }
+    res.json({ message: 'Halaman berhasil dihapus.' });
+  } catch (err) {
+    console.error('Error deleting page:', err);
+    res.status(500).json({ message: 'Gagal menghapus halaman.' });
+  }
 });
 
 
 // Start server
 app.listen(port, () => {
-  console.log(`Backend API berjalan di http://localhost:${port}`);
+  console.log(`Backend API berjalan di http://localhost:${port}`);
 });

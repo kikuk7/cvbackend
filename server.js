@@ -1,12 +1,15 @@
+// server.js
+
 require('dotenv').config();
 const express = require('express');
 const { Pool } = require('pg');
 const cors = require('cors');
 const multer = require('multer');
 const { createClient } = require('@supabase/supabase-js');
+const { v4: uuidv4 } = require('uuid');
 
 const app = express();
-const port = process.env.PORT || 8080; // Sesuaikan dengan port lokal Nuxt Anda atau 3001
+const port = process.env.PORT || 8080; 
 
 const pool = new Pool({
   user: process.env.DB_USER,
@@ -51,10 +54,30 @@ app.use(cors({
 
 app.use(express.json()); 
 
+// --- DAFTAR KOLOM LENGKAP DARI TABEL PAGES ANDA (44 kolom) ---
+// Ini harus sama persis dengan yang Anda dapatkan dari pgAdmin/Supabase Table Editor.
+// Urutan dan nama harus sesuai!
+const ALL_PAGE_COLUMNS = `
+  id, title, slug, hero_title, hero_video_url, hero_image_url,
+  homepage_about_section_text, homepage_services_section_text,
+  vision_title, vision_body, mission_title, mission_body, excellence_title,
+  gallery_intro_body, contact_overlay_text, contact_title, contact_phone,
+  contact_location_title, contact_location_body, contact_email_title,
+  contact_email_address, contact_whatsapp_number, main_intro_body,
+  service_1_title, service_1_body, service_2_title, service_2_body, service_3_title, service_3_body,
+  faq_main_title, body, created_at, updated_at,
+  faq_1_question, faq_1_answer, faq_2_question, faq_2_answer, faq_3_question, faq_3_answer,
+  faq_4_question, faq_4_answer, faq_5_question, faq_5_answer, images,
+  hero_video_source_type, hero_image_source_type,
+  homepage_bottom_image_1_url, homepage_bottom_image_2_url, homepage_bottom_image_3_url, -- KOLOM BARU DI SINI
+  excellence_image_1_url, excellence_image_2_url, excellence_image_3_url -- KOLOM BARU DI SINI
+`; // Total 44 + 3 + 3 = 50 KOLOM. Sesuaikan jumlah placeholder di UPDATE/INSERT jika ini bertambah.
+
 // GET semua halaman
 app.get('/api/pages', async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM pages ORDER BY id ASC');
+    // Menggunakan daftar kolom eksplisit
+    const result = await pool.query(`SELECT ${ALL_PAGE_COLUMNS} FROM pages ORDER BY id ASC`);
     res.json(result.rows);
   } catch (err) {
     console.error('Error fetching pages:', err);
@@ -71,10 +94,12 @@ app.get('/api/pages/:idOrSlug', async (req, res) => {
   const numericId = parseInt(idOrSlug);
 
   if (!isNaN(numericId)) {
-    query = `SELECT * FROM pages WHERE id = $1`;
+    // Menggunakan daftar kolom eksplisit
+    query = `SELECT ${ALL_PAGE_COLUMNS} FROM pages WHERE id = $1`;
     values = [numericId];
   } else {
-    query = `SELECT * FROM pages WHERE slug = $1`;
+    // Menggunakan daftar kolom eksplisit
+    query = `SELECT ${ALL_PAGE_COLUMNS} FROM pages WHERE slug = $1`;
     values = [idOrSlug];
   }
 
@@ -99,7 +124,7 @@ app.post('/api/upload-image', upload.single('image'), async (req, res) => {
 
     const file = req.file;
     const fileExtension = file.originalname.split('.').pop();
-    const fileName = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}.${fileExtension}`; 
+    const fileName = `${uuidv4()}.${fileExtension}`; 
     
     const { data, error } = await supabase.storage
       .from(supabaseStorageBucket)
@@ -151,14 +176,15 @@ app.put('/api/pages/:id', async (req, res) => {
     faq_1_question, faq_1_answer, faq_2_question, faq_2_answer, faq_3_question, faq_3_answer,
     faq_4_question, faq_4_answer, faq_5_question, faq_5_answer, images,
     hero_video_source_type, hero_image_source_type,
-    // KOLOM BARU UNTUK GAMBAR BAWAH BERANDA
-    homepage_bottom_image_1_url, homepage_bottom_image_2_url, homepage_bottom_image_3_url
+    homepage_bottom_image_1_url, homepage_bottom_image_2_url, homepage_bottom_image_3_url, // KOLOM BARU DI SINI
+    excellence_image_1_url, excellence_image_2_url, excellence_image_3_url // KOLOM BARU DI SINI
   } = req.body;
 
   try {
-    // Pastikan semua kolom di UPDATE query sesuai dengan 44 + 3 = 47 kolom di database Anda
-    // dan urutan parameternya cocok dengan array 'values'.
-    // Placeholder akan menjadi $1 sampai $46 (43 kolom data + 3 kolom baru) + $47 (id)
+    // HITUNG ULANG JUMLAH PLACEHOLDER DENGAN SANGAT HATI-HATI!
+    // Total 44 kolom lama + 3 homepage_bottom + 3 excellence_image = 50 kolom data.
+    // 50 kolom data + 1 id = 51 placeholder di VALUES
+    // Placeholder akan menjadi $1 sampai $49 (untuk data) + $50 (untuk id)
     const updateQuery = `
       UPDATE pages
       SET
@@ -176,13 +202,14 @@ app.put('/api/pages/:id', async (req, res) => {
         images = $41, 
         hero_video_source_type = $42, hero_image_source_type = $43,
         homepage_bottom_image_1_url = $44, homepage_bottom_image_2_url = $45, homepage_bottom_image_3_url = $46, -- KOLOM BARU
+        excellence_image_1_url = $47, excellence_image_2_url = $48, excellence_image_3_url = $49, -- KOLOM BARU
         updated_at = CURRENT_TIMESTAMP
-      WHERE id = $47 -- Ini akan menerima nilai 'id' yang sudah di-parse ke integer
+      WHERE id = $50 
       RETURNING *;
     `;
     
-    // Pastikan jumlah nilai di array 'values' ini adalah 47 (43 kolom data + 3 kolom baru + 1 id)
-    // dan urutannya cocok dengan placeholder $1 sampai $47.
+    // Pastikan jumlah nilai di array 'values' ini adalah 50 (49 kolom data + 1 id)
+    // dan urutannya cocok dengan placeholder $1 sampai $50.
     const values = [
       title, slug, hero_title, hero_video_url, hero_image_url,
       homepage_about_section_text, homepage_services_section_text,
@@ -195,7 +222,8 @@ app.put('/api/pages/:id', async (req, res) => {
       faq_1_question, faq_1_answer, faq_2_question, faq_2_answer, faq_3_question, faq_3_answer,
       faq_4_question, faq_4_answer, faq_5_question, faq_5_answer, images, 
       hero_video_source_type, hero_image_source_type,
-      homepage_bottom_image_1_url, homepage_bottom_image_2_url, homepage_bottom_image_3_url, // KOLOM BARU
+      homepage_bottom_image_1_url, homepage_bottom_image_2_url, homepage_bottom_image_3_url,
+      excellence_image_1_url, excellence_image_2_url, excellence_image_3_url,
       numericId 
     ];
 
@@ -227,8 +255,8 @@ app.post('/api/pages', async (req, res) => {
     faq_1_question, faq_1_answer, faq_2_question, faq_2_answer, faq_3_question, faq_3_answer,
     faq_4_question, faq_4_answer, faq_5_question, faq_5_answer, images,
     hero_video_source_type, hero_image_source_type,
-    // KOLOM BARU UNTUK GAMBAR BAWAH BERANDA
-    homepage_bottom_image_1_url, homepage_bottom_image_2_url, homepage_bottom_image_3_url
+    homepage_bottom_image_1_url, homepage_bottom_image_2_url, homepage_bottom_image_3_url,
+    excellence_image_1_url, excellence_image_2_url, excellence_image_3_url
   } = req.body;
 
   try {
@@ -236,9 +264,8 @@ app.post('/api/pages', async (req, res) => {
         return res.status(400).json({ message: 'Judul dan Slug wajib diisi.' });
     }
 
-    // Pastikan daftar kolom di INSERT query sesuai dengan total kolom di database
-    // Total kolom di DB sekarang 44 (lama) + 3 (baru) = 47
-    // Placeholder $1 sampai $46 (43 data lama + 3 baru) + CURRENT_TIMESTAMP * 2
+    // Total kolom di DB sekarang 44 (lama) + 3 (hp_bottom) + 3 (excellence) = 50
+    // Placeholder akan menjadi $1 sampai $49 (untuk data) + CURRENT_TIMESTAMP * 2
     const insertQuery = `
       INSERT INTO pages (
         title, slug, hero_title, hero_video_url, hero_image_url,
@@ -252,10 +279,11 @@ app.post('/api/pages', async (req, res) => {
         faq_1_question, faq_1_answer, faq_2_question, faq_2_answer, faq_3_question, faq_3_answer,
         faq_4_question, faq_4_answer, faq_5_question, faq_5_answer, images,
         hero_video_source_type, hero_image_source_type, 
-        homepage_bottom_image_1_url, homepage_bottom_image_2_url, homepage_bottom_image_3_url, -- KOLOM BARU
+        homepage_bottom_image_1_url, homepage_bottom_image_2_url, homepage_bottom_image_3_url, 
+        excellence_image_1_url, excellence_image_2_url, excellence_image_3_url,
         created_at, updated_at
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
       RETURNING *;
     `; 
 
@@ -271,7 +299,8 @@ app.post('/api/pages', async (req, res) => {
       faq_1_question, faq_1_answer, faq_2_question, faq_2_answer, faq_3_question, faq_3_answer,
       faq_4_question, faq_4_answer, faq_5_question, faq_5_answer, images,
       hero_video_source_type, hero_image_source_type,
-      homepage_bottom_image_1_url, homepage_bottom_image_2_url, homepage_bottom_image_3_url // KOLOM BARU
+      homepage_bottom_image_1_url, homepage_bottom_image_2_url, homepage_bottom_image_3_url,
+      excellence_image_1_url, excellence_image_2_url, excellence_image_3_url
     ];
 
     const result = await pool.query(insertQuery, insertValues);
@@ -288,27 +317,27 @@ app.post('/api/pages', async (req, res) => {
 
 // DELETE halaman
 app.delete('/api/pages/:id', async (req, res) => {
-  const { id } = req.params;
-  const numericId = parseInt(id); 
+  const { id } = req.params;
+  const numericId = parseInt(id); 
 
-  if (isNaN(numericId)) {
-      return res.status(400).json({ message: 'ID halaman tidak valid.' });
-  }
+  if (isNaN(numericId)) {
+      return res.status(400).json({ message: 'ID halaman tidak valid.' });
+  }
 
-  try {
-    const result = await pool.query('DELETE FROM pages WHERE id = $1 RETURNING *', [numericId]);
-    if (result.rows.length === 0) {
-      return res.status(404).json({ message: 'Halaman tidak ditemukan.' });
-    }
-    res.json({ message: 'Halaman berhasil dihapus.' });
-  } catch (err) {
-    console.error('Error deleting page:', err);
-    res.status(500).json({ message: 'Gagal menghapus halaman.' });
-  }
+  try {
+    const result = await pool.query('DELETE FROM pages WHERE id = $1 RETURNING *', [numericId]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Halaman tidak ditemukan.' });
+    }
+    res.json({ message: 'Halaman berhasil dihapus.' });
+  } catch (err) {
+    console.error('Error deleting page:', err);
+    res.status(500).json({ message: 'Gagal menghapus halaman.' });
+  }
 });
 
 
 // Start server
 app.listen(port, () => {
-  console.log(`Backend API berjalan di http://localhost:${port}`);
+  console.log(`Backend API berjalan di http://localhost:${port}`);
 });

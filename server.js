@@ -1,4 +1,4 @@
-// server.js (Modifikasi)
+// server.js
 
 require('dotenv').config();
 const express = require('express');
@@ -11,42 +11,54 @@ const { v4: uuidv4 } = require('uuid');
 const app = express();
 const port = process.env.PORT || 8080;
 
+// Inisialisasi Pool untuk PostgreSQL (database utama Anda, jika terpisah dari Supabase)
 const pool = new Pool({
     user: process.env.DB_USER,
     host: process.env.DB_HOST,
     database: process.env.DB_NAME,
     password: process.env.DB_PASSWORD,
     port: process.env.DB_PORT,
-});
-
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
-const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-// Gunakan Supabase client dengan service_role_key untuk operasi aman dari backend
-const supabase = createClient(supabaseUrl, supabaseServiceRoleKey); // PASTIKAN MENGGUNAKAN serviceRoleKey di sini
-
-const supabaseStorageBucket = process.env.SUPABASE_STORAGE_BUCKET;
-
-const upload = multer({
-    storage: multer.memoryStorage(),
-    limits: {
-        fileSize: 5 * 1024 * 1024
+    ssl: { // Penting untuk koneksi ke database di Railway/hosting lain
+        rejectUnauthorized: false
     }
 });
 
+// Inisialisasi Supabase Client (gunakan SERVICE_ROLE_KEY untuk keamanan penuh di backend)
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+if (!supabaseUrl || !supabaseServiceRoleKey) {
+    console.error('ERROR: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not found in environment variables.');
+    process.exit(1); // Hentikan aplikasi jika kunci penting tidak ada
+}
+const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
+
+const supabaseStorageBucket = process.env.SUPABASE_STORAGE_BUCKET;
+
+// Konfigurasi Multer untuk upload file
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: {
+        fileSize: 5 * 1024 * 1024 // Batasi ukuran file 5MB
+    }
+});
+
+// Konfigurasi CORS
 const allowedOrigins = [
-    'http://localhost:3000',
-    'https://cvalams-rizqis-projects-607b9812.vercel.app',
-    'https://cvalams.vercel.app'
+    'http://localhost:3000', // Untuk pengembangan lokal Nuxt
+    'https://cvalams-rizqis-projects-607b9812.vercel.app', // Contoh URL Vercel preview/deployment Anda
+    'https://cvalams.vercel.app' // URL produksi Vercel Anda
+    // Tambahkan URL Vercel lain yang mungkin Anda gunakan jika ada
 ];
 
 app.use(cors({
     origin: function (origin, callback) {
-        if (!origin || allowedOrigins.indexOf(origin) !== -1) {
-            callback(null, true)
+        // Izinkan permintaan tanpa origin (misal: dari Postman/Insomnia atau permintaan server-to-server)
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
         } else {
             console.error('CORS: Origin not allowed:', origin);
-            callback(new Error('Not allowed by CORS'))
+            callback(new Error('Not allowed by CORS'));
         }
     },
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
@@ -54,9 +66,11 @@ app.use(cors({
     credentials: true
 }));
 
+// Middleware untuk parsing JSON body
 app.use(express.json());
 
-// --- DAFTAR KOLOM LENGKAP DARI TABEL PAGES ANDA (50 kolom setelah penambahan) ---
+// --- DAFTAR KOLOM LENGKAP DARI TABEL PAGES ANDA ---
+// Ini harus sama persis dengan yang ada di skema database Anda.
 const ALL_PAGE_COLUMNS = `
     id, title, slug, hero_title, hero_video_url, hero_image_url,
     homepage_about_section_text, homepage_services_section_text,
@@ -73,6 +87,7 @@ const ALL_PAGE_COLUMNS = `
     excellence_image_1_url, excellence_image_2_url, excellence_image_3_url
 `;
 
+// --- ROUTE UNTUK MANAJEMEN HALAMAN (PAGES) ---
 // GET semua halaman
 app.get('/api/pages', async (req, res) => {
     try {
@@ -112,7 +127,7 @@ app.get('/api/pages/:idOrSlug', async (req, res) => {
     }
 });
 
-// Endpoint untuk mengunggah gambar
+// Endpoint untuk mengunggah gambar ke Supabase Storage
 app.post('/api/upload-image', upload.single('image'), async (req, res) => {
     try {
         if (!req.file) {
@@ -127,7 +142,7 @@ app.post('/api/upload-image', upload.single('image'), async (req, res) => {
             .from(supabaseStorageBucket)
             .upload(fileName, file.buffer, {
                 contentType: file.mimetype,
-                upsert: false
+                upsert: false // Jangan menimpa jika sudah ada
             });
 
         if (error) {
@@ -151,7 +166,6 @@ app.post('/api/upload-image', upload.single('image'), async (req, res) => {
     }
 });
 
-
 // PUT (Update) halaman berdasarkan ID
 app.put('/api/pages/:id', async (req, res) => {
     const { id } = req.params;
@@ -168,12 +182,9 @@ app.put('/api/pages/:id', async (req, res) => {
         gallery_intro_body, contact_overlay_text, contact_title, contact_phone,
         contact_location_title, contact_location_body, contact_email_title,
         contact_email_address, contact_whatsapp_number, main_intro_body,
-        service_1_title, service_1_body,
-        service_1_image_url,
-        service_2_title, service_2_body,
-        service_2_image_url,
-        service_3_title, service_3_body,
-        service_3_image_url,
+        service_1_title, service_1_body, service_1_image_url,
+        service_2_title, service_2_body, service_2_image_url,
+        service_3_title, service_3_body, service_3_image_url,
         faq_main_title, body,
         faq_1_question, faq_1_answer, faq_2_question, faq_2_answer, faq_3_question, faq_3_answer,
         faq_4_question, faq_4_answer, faq_5_question, faq_5_answer, images,
@@ -193,12 +204,9 @@ app.put('/api/pages/:id', async (req, res) => {
                 contact_title = $15, contact_phone = $16, contact_location_title = $17,
                 contact_location_body = $18, contact_email_title = $19, contact_email_address = $20,
                 contact_whatsapp_number = $21, main_intro_body = $22,
-                service_1_title = $23, service_1_body = $24,
-                service_1_image_url = $25,
-                service_2_title = $26, service_2_body = $27,
-                service_2_image_url = $28,
-                service_3_title = $29, service_3_body = $30,
-                service_3_image_url = $31,
+                service_1_title = $23, service_1_body = $24, service_1_image_url = $25,
+                service_2_title = $26, service_2_body = $27, service_2_image_url = $28,
+                service_3_title = $29, service_3_body = $30, service_3_image_url = $31,
                 faq_main_title = $32, body = $33,
                 faq_1_question = $34, faq_1_answer = $35, faq_2_question = $36, faq_2_answer = $37, faq_3_question = $38, faq_3_answer = $39,
                 faq_4_question = $40, faq_4_answer = $41, faq_5_question = $42, faq_5_answer = $43,
@@ -218,12 +226,9 @@ app.put('/api/pages/:id', async (req, res) => {
             gallery_intro_body, contact_overlay_text, contact_title, contact_phone,
             contact_location_title, contact_location_body, contact_email_title,
             contact_email_address, contact_whatsapp_number, main_intro_body,
-            service_1_title, service_1_body,
-            service_1_image_url,
-            service_2_title, service_2_body,
-            service_2_image_url,
-            service_3_title, service_3_body,
-            service_3_image_url,
+            service_1_title, service_1_body, service_1_image_url,
+            service_2_title, service_2_body, service_2_image_url,
+            service_3_title, service_3_body, service_3_image_url,
             faq_main_title, body,
             faq_1_question, faq_1_answer, faq_2_question, faq_2_answer, faq_3_question, faq_3_answer,
             faq_4_question, faq_4_answer, faq_5_question, faq_5_answer, images,
@@ -256,12 +261,9 @@ app.post('/api/pages', async (req, res) => {
         gallery_intro_body, contact_overlay_text, contact_title, contact_phone,
         contact_location_title, contact_location_body, contact_email_title,
         contact_email_address, contact_whatsapp_number, main_intro_body,
-        service_1_title, service_1_body,
-        service_1_image_url,
-        service_2_title, service_2_body,
-        service_2_image_url,
-        service_3_title, service_3_body,
-        service_3_image_url,
+        service_1_title, service_1_body, service_1_image_url,
+        service_2_title, service_2_body, service_2_image_url,
+        service_3_title, service_3_body, service_3_image_url,
         faq_main_title, body,
         faq_1_question, faq_1_answer, faq_2_question, faq_2_answer, faq_3_question, faq_3_answer,
         faq_4_question, faq_4_answer, faq_5_question, faq_5_answer, images,
@@ -283,12 +285,9 @@ app.post('/api/pages', async (req, res) => {
                 gallery_intro_body, contact_overlay_text, contact_title, contact_phone,
                 contact_location_title, contact_location_body, contact_email_title,
                 contact_email_address, contact_whatsapp_number, main_intro_body,
-                service_1_title, service_1_body,
-                service_1_image_url,
-                service_2_title, service_2_body,
-                service_2_image_url,
-                service_3_title, service_3_body,
-                service_3_image_url,
+                service_1_title, service_1_body, service_1_image_url,
+                service_2_title, service_2_body, service_2_image_url,
+                service_3_title, service_3_body, service_3_image_url,
                 faq_main_title, body,
                 faq_1_question, faq_1_answer, faq_2_question, faq_2_answer, faq_3_question, faq_3_answer,
                 faq_4_question, faq_4_answer, faq_5_question, faq_5_answer, images,
@@ -308,12 +307,9 @@ app.post('/api/pages', async (req, res) => {
             gallery_intro_body, contact_overlay_text, contact_title, contact_phone,
             contact_location_title, contact_location_body, contact_email_title,
             contact_email_address, contact_whatsapp_number, main_intro_body,
-            service_1_title, service_1_body,
-            service_1_image_url,
-            service_2_title, service_2_body,
-            service_2_image_url,
-            service_3_title, service_3_body,
-            service_3_image_url,
+            service_1_title, service_1_body, service_1_image_url,
+            service_2_title, service_2_body, service_2_image_url,
+            service_3_title, service_3_body, service_3_image_url,
             faq_main_title, body,
             faq_1_question, faq_1_answer, faq_2_question, faq_2_answer, faq_3_question, faq_3_answer,
             faq_4_question, faq_4_answer, faq_5_question, faq_5_answer, images,
@@ -355,30 +351,33 @@ app.delete('/api/pages/:id', async (req, res) => {
     }
 });
 
-// --- NEW VISITOR STATS ENDPOINTS ---
 
-// GET Visitor Stats
+// --- ROUTE UNTUK STATISTIK PENGUNJUNG (VISITOR STATS) ---
+
+// GET Statistik Pengunjung
 app.get('/api/visitor-stats', async (req, res) => {
     try {
+        // Ambil data statistik terbaru (asumsi ada satu baris untuk statistik global)
         const { data, error } = await supabase
             .from('visitor_stats')
-            .select('total_visitors, today_visitors, online_users, last_updated, id') // Select ID and last_updated
+            .select('total_visitors, today_visitors, online_users, last_updated, id')
             .order('last_updated', { ascending: false })
             .limit(1)
             .single();
 
-        if (error && error.code !== 'PGRST116') { // PGRST116 means no rows found
+        if (error && error.code !== 'PGRST116') { // PGRST116 = Baris tidak ditemukan
             throw error;
         }
 
         let currentStats = data;
 
-        // If no stats found, initialize them
+        // Jika tidak ada data statistik, inisialisasi baris baru
         if (!currentStats) {
+            console.log('No visitor stats found, initializing...');
             const { data: newStats, error: initError } = await supabase
                 .from('visitor_stats')
                 .insert({
-                    date: new Date().toISOString().split('T')[0],
+                    date: new Date().toISOString().split('T')[0], // Format YYYY-MM-DD
                     total_visitors: 0,
                     today_visitors: 0,
                     online_users: 0,
@@ -390,25 +389,26 @@ app.get('/api/visitor-stats', async (req, res) => {
             currentStats = newStats;
         }
 
-        // Check and reset today_visitors if date has changed
+        // Logika untuk mereset 'today_visitors' jika hari sudah berganti
         const today = new Date().toISOString().split('T')[0];
         const lastUpdatedDate = currentStats.last_updated ? new Date(currentStats.last_updated).toISOString().split('T')[0] : '';
 
         if (lastUpdatedDate !== today) {
-            // Reset today_visitors in DB
+            // Reset today_visitors di database
             const { error: updateError } = await supabase
                 .from('visitor_stats')
                 .update({ today_visitors: 0, last_updated: new Date().toISOString() })
-                .eq('id', currentStats.id); // Update by ID
+                .eq('id', currentStats.id); // Update berdasarkan ID baris
             if (updateError) throw updateError;
-            currentStats.today_visitors = 0; // Update local value
+            currentStats.today_visitors = 0; // Update nilai lokal juga
         }
 
+        // Kirim data statistik yang sudah diproses ke frontend
         res.json({
             totalVisitors: currentStats.total_visitors,
             todayVisitors: currentStats.today_visitors,
             onlineUsers: currentStats.online_users,
-            id: currentStats.id // Kirim ID juga
+            id: currentStats.id // Penting: kirim ID agar frontend bisa menggunakannya untuk update
         });
     } catch (err) {
         console.error('Error fetching visitor stats:', err.message);
@@ -416,29 +416,33 @@ app.get('/api/visitor-stats', async (req, res) => {
     }
 });
 
-// POST/PUT (Update) Visitor Stats
-app.post('/api/visitor-stats/update', async (req, res) => { // Menggunakan POST karena ini adalah "tindakan" update
-    const { type, visitorStatsId } = req.body; // Menerima tipe update dan ID baris
+// POST (Update) Statistik Pengunjung
+app.post('/api/visitor-stats/update', async (req, res) => {
+    const { type, visitorStatsId } = req.body;
 
     if (!visitorStatsId) {
-        return res.status(400).json({ message: 'visitorStatsId diperlukan.' });
+        return res.status(400).json({ message: 'visitorStatsId diperlukan untuk memperbarui statistik.' });
     }
 
     try {
-        // Ambil data saat ini untuk memastikan konsistensi
+        // Ambil data saat ini untuk menghindari race condition
         const { data: currentStats, error: fetchError } = await supabase
             .from('visitor_stats')
             .select('total_visitors, today_visitors, online_users, last_updated')
             .eq('id', visitorStatsId)
             .single();
 
-        if (fetchError) throw fetchError;
+        if (fetchError) {
+            // Jika baris tidak ditemukan atau error lain saat fetch, kirim error
+            console.error('Error fetching current stats for update:', fetchError.message);
+            return res.status(404).json({ message: 'Statistik pengunjung tidak ditemukan.' });
+        }
 
         let newTotal = currentStats.total_visitors;
         let newToday = currentStats.today_visitors;
         let newOnline = currentStats.online_users;
 
-        // Reset today_visitors jika hari sudah berganti (sekali lagi untuk jaga-jaga)
+        // Pastikan today_visitors di-reset jika hari sudah berganti (double check)
         const today = new Date().toISOString().split('T')[0];
         const lastUpdatedDate = new Date(currentStats.last_updated).toISOString().split('T')[0];
 
@@ -446,16 +450,18 @@ app.post('/api/visitor-stats/update', async (req, res) => { // Menggunakan POST 
             newToday = 0;
         }
 
+        // Tentukan operasi update berdasarkan 'type'
         if (type === 'increment_all') {
             newTotal++;
             newToday++;
             newOnline++;
         } else if (type === 'decrement_online') {
-            newOnline = Math.max(0, newOnline - 1);
+            newOnline = Math.max(0, newOnline - 1); // Pastikan tidak negatif
         } else {
             return res.status(400).json({ message: 'Tipe update tidak valid.' });
         }
 
+        // Lakukan update di Supabase
         const { data: updatedData, error: updateError } = await supabase
             .from('visitor_stats')
             .update({
@@ -464,12 +470,13 @@ app.post('/api/visitor-stats/update', async (req, res) => { // Menggunakan POST 
                 online_users: newOnline,
                 last_updated: new Date().toISOString()
             })
-            .eq('id', visitorStatsId)
-            .select('total_visitors, today_visitors, online_users')
+            .eq('id', visitorStatsId) // Update baris spesifik
+            .select('total_visitors, today_visitors, online_users') // Pilih kolom yang akan dikembalikan
             .single();
 
         if (updateError) throw updateError;
 
+        // Kirim data yang diperbarui kembali ke frontend
         res.json({
             message: 'Statistik pengunjung berhasil diperbarui.',
             totalVisitors: updatedData.total_visitors,
@@ -482,7 +489,6 @@ app.post('/api/visitor-stats/update', async (req, res) => { // Menggunakan POST 
         res.status(500).json({ message: 'Gagal memperbarui statistik pengunjung.', error: err.message });
     }
 });
-
 
 // Start server
 app.listen(port, () => {

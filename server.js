@@ -1,52 +1,60 @@
 // server.js
 
+// Memuat variabel lingkungan dari file .env
 require('dotenv').config();
 const express = require('express');
-const { Pool } = require('pg');
+const { Pool } = require('pg'); // Untuk koneksi ke database PostgreSQL utama
 const cors = require('cors');
-const multer = require('multer');
-const { createClient } = require('@supabase/supabase-js');
-const { v4: uuidv4 } = require('uuid');
+const multer = require('multer'); // Untuk menangani upload file
+const { createClient } = require('@supabase/supabase-js'); // Untuk interaksi dengan Supabase
+const { v4: uuidv4 } = require('uuid'); // Untuk menghasilkan ID unik
 
 const app = express();
-const port = process.env.PORT || 8080;
+const port = process.env.PORT || 8080; // Port untuk menjalankan server
 
-// Inisialisasi Pool untuk PostgreSQL (database utama Anda, jika terpisah dari Supabase)
+// --- Konfigurasi Database PostgreSQL (Jika terpisah dari Supabase PG) ---
+// Jika Supabase adalah satu-satunya database Anda, bagian ini mungkin tidak diperlukan
+// atau perlu disesuaikan untuk menunjuk ke Supabase's managed Postgres.
+// Namun, dari kode Anda sebelumnya, Anda tampaknya menggunakan PG Pool terpisah.
 const pool = new Pool({
     user: process.env.DB_USER,
     host: process.env.DB_HOST,
     database: process.env.DB_NAME,
     password: process.env.DB_PASSWORD,
     port: process.env.DB_PORT,
-    ssl: { // Penting untuk koneksi ke database di Railway/hosting lain
-        rejectUnauthorized: false
+    ssl: { // Penting untuk koneksi aman ke database di lingkungan cloud (misal: Railway)
+        rejectUnauthorized: false // Mungkin perlu disetel ke true di produksi dengan sertifikat yang tepat
     }
 });
 
-// Inisialisasi Supabase Client (gunakan SERVICE_ROLE_KEY untuk keamanan penuh di backend)
+// --- Konfigurasi Supabase Client ---
+// Mengambil URL dan Kunci Supabase dari variabel lingkungan
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-if (!supabaseUrl || !supabaseServiceRoleKey) {
-    console.error('ERROR: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not found in environment variables.');
-    process.exit(1); // Hentikan aplikasi jika kunci penting tidak ada
-}
-const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
-
 const supabaseStorageBucket = process.env.SUPABASE_STORAGE_BUCKET;
 
-// Konfigurasi Multer untuk upload file
+// Validasi keberadaan kunci Supabase sebelum inisialisasi
+if (!supabaseUrl || !supabaseServiceRoleKey) {
+    console.error('ERROR: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not found in environment variables. Server cannot start.');
+    // Menghentikan proses Node.js jika kunci penting tidak ada
+    process.exit(1); 
+}
+// Menginisialisasi Supabase client dengan service_role_key untuk izin penuh di backend
+const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
+
+// --- Konfigurasi Multer untuk Upload File ---
 const upload = multer({
-    storage: multer.memoryStorage(),
+    storage: multer.memoryStorage(), // Menyimpan file di memori
     limits: {
-        fileSize: 5 * 1024 * 1024 // Batasi ukuran file 5MB
+        fileSize: 5 * 1024 * 1024 // Batas ukuran file 5 MB
     }
 });
 
-// Konfigurasi CORS
+// --- Konfigurasi CORS (Cross-Origin Resource Sharing) ---
+// Daftar origin (URL frontend) yang diizinkan untuk mengakses API ini
 const allowedOrigins = [
-    'http://localhost:3000', // Untuk pengembangan lokal Nuxt
-    'https://cvalams-rizqis-projects-607b9812.vercel.app', // Contoh URL Vercel preview/deployment Anda
+    'http://localhost:3000', // Untuk pengembangan Nuxt lokal
+    'https://cvalams-rizqis-projects-607b9812.vercel.app', // Contoh URL Vercel preview
     'https://cvalams.vercel.app' // URL produksi Vercel Anda
     // Tambahkan URL Vercel lain yang mungkin Anda gunakan jika ada
 ];
@@ -54,23 +62,24 @@ const allowedOrigins = [
 app.use(cors({
     origin: function (origin, callback) {
         // Izinkan permintaan tanpa origin (misal: dari Postman/Insomnia atau permintaan server-to-server)
+        // Atau jika origin termasuk dalam daftar allowedOrigins
         if (!origin || allowedOrigins.includes(origin)) {
-            callback(null, true);
+            callback(null, true); // Izinkan
         } else {
-            console.error('CORS: Origin not allowed:', origin);
-            callback(new Error('Not allowed by CORS'));
+            console.error('CORS: Origin not allowed:', origin); // Log origin yang ditolak
+            callback(new Error('Not allowed by CORS')); // Tolak
         }
     },
-    methods: ['GET', 'POST', 'PUT', 'DELETE'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-    credentials: true
+    methods: ['GET', 'POST', 'PUT', 'DELETE'], // Metode HTTP yang diizinkan
+    allowedHeaders: ['Content-Type', 'Authorization'], // Header yang diizinkan
+    credentials: true // Mengizinkan pengiriman kredensial (misal: cookies, authorization headers)
 }));
 
-// Middleware untuk parsing JSON body
+// Middleware untuk parsing JSON body dari request
 app.use(express.json());
 
 // --- DAFTAR KOLOM LENGKAP DARI TABEL PAGES ANDA ---
-// Ini harus sama persis dengan yang ada di skema database Anda.
+// Ini harus sama persis dengan nama kolom di skema database Anda.
 const ALL_PAGE_COLUMNS = `
     id, title, slug, hero_title, hero_video_url, hero_image_url,
     homepage_about_section_text, homepage_services_section_text,
@@ -78,7 +87,9 @@ const ALL_PAGE_COLUMNS = `
     gallery_intro_body, contact_overlay_text, contact_title, contact_phone,
     contact_location_title, contact_location_body, contact_email_title,
     contact_email_address, contact_whatsapp_number, main_intro_body,
-    service_1_title, service_1_body, service_1_image_url, service_2_title, service_2_body, service_2_image_url, service_3_title, service_3_body, service_3_image_url,
+    service_1_title, service_1_body, service_1_image_url, 
+    service_2_title, service_2_body, service_2_image_url, 
+    service_3_title, service_3_body, service_3_image_url, 
     faq_main_title, body, created_at, updated_at,
     faq_1_question, faq_1_answer, faq_2_question, faq_2_answer, faq_3_question, faq_3_answer,
     faq_4_question, faq_4_answer, faq_5_question, faq_5_answer, images,
@@ -88,6 +99,7 @@ const ALL_PAGE_COLUMNS = `
 `;
 
 // --- ROUTE UNTUK MANAJEMEN HALAMAN (PAGES) ---
+
 // GET semua halaman
 app.get('/api/pages', async (req, res) => {
     try {
@@ -136,13 +148,13 @@ app.post('/api/upload-image', upload.single('image'), async (req, res) => {
 
         const file = req.file;
         const fileExtension = file.originalname.split('.').pop();
-        const fileName = `${uuidv4()}.${fileExtension}`;
+        const fileName = `${uuidv4()}.${fileExtension}`; // Nama file unik
 
         const { data, error } = await supabase.storage
             .from(supabaseStorageBucket)
             .upload(fileName, file.buffer, {
                 contentType: file.mimetype,
-                upsert: false // Jangan menimpa jika sudah ada
+                upsert: false // Jangan menimpa jika sudah ada file dengan nama yang sama
             });
 
         if (error) {
@@ -150,6 +162,7 @@ app.post('/api/upload-image', upload.single('image'), async (req, res) => {
             return res.status(500).json({ message: 'Gagal mengunggah file ke Supabase Storage.', error: error.message });
         }
 
+        // Dapatkan URL publik dari file yang diunggah
         const { data: publicUrlData } = supabase.storage
             .from(supabaseStorageBucket)
             .getPublicUrl(fileName);
@@ -377,7 +390,7 @@ app.get('/api/visitor-stats', async (req, res) => {
             const { data: newStats, error: initError } = await supabase
                 .from('visitor_stats')
                 .insert({
-                    date: new Date().toISOString().split('T')[0], // Format YYYY-MM-DD
+                    date: new Date().toISOString().split('T')[0], // Tanggal hari ini YYYY-MM-DD
                     total_visitors: 0,
                     today_visitors: 0,
                     online_users: 0,
@@ -389,12 +402,12 @@ app.get('/api/visitor-stats', async (req, res) => {
             currentStats = newStats;
         }
 
-        // Logika untuk mereset 'today_visitors' jika hari sudah berganti
+        // Cek dan reset today_visitors jika tanggal sudah berganti
         const today = new Date().toISOString().split('T')[0];
         const lastUpdatedDate = currentStats.last_updated ? new Date(currentStats.last_updated).toISOString().split('T')[0] : '';
 
         if (lastUpdatedDate !== today) {
-            // Reset today_visitors di database
+            // Reset today_visitors di DB
             const { error: updateError } = await supabase
                 .from('visitor_stats')
                 .update({ today_visitors: 0, last_updated: new Date().toISOString() })
@@ -405,10 +418,10 @@ app.get('/api/visitor-stats', async (req, res) => {
 
         // Kirim data statistik yang sudah diproses ke frontend
         res.json({
-            totalVisitors: currentStats.total_visitors,
-            todayVisitors: currentStats.today_visitors,
-            onlineUsers: currentStats.online_users,
-            id: currentStats.id // Penting: kirim ID agar frontend bisa menggunakannya untuk update
+            totalVisitors: currentStats.total_visitors, // Sesuaikan nama properti agar konsisten dengan frontend
+            todayVisitors: currentStats.today_visitors, // Sesuaikan nama properti
+            onlineUsers: currentStats.online_users,     // Sesuaikan nama properti
+            id: currentStats.id // Kirim ID juga
         });
     } catch (err) {
         console.error('Error fetching visitor stats:', err.message);
@@ -418,7 +431,7 @@ app.get('/api/visitor-stats', async (req, res) => {
 
 // POST (Update) Statistik Pengunjung
 app.post('/api/visitor-stats/update', async (req, res) => {
-    const { type, visitorStatsId } = req.body;
+    const { type, visitorStatsId } = req.body; // Menerima tipe update dan ID baris
 
     if (!visitorStatsId) {
         return res.status(400).json({ message: 'visitorStatsId diperlukan untuk memperbarui statistik.' });
@@ -461,7 +474,6 @@ app.post('/api/visitor-stats/update', async (req, res) => {
             return res.status(400).json({ message: 'Tipe update tidak valid.' });
         }
 
-        // Lakukan update di Supabase
         const { data: updatedData, error: updateError } = await supabase
             .from('visitor_stats')
             .update({
@@ -489,6 +501,7 @@ app.post('/api/visitor-stats/update', async (req, res) => {
         res.status(500).json({ message: 'Gagal memperbarui statistik pengunjung.', error: err.message });
     }
 });
+
 
 // Start server
 app.listen(port, () => {

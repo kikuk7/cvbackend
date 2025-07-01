@@ -81,90 +81,96 @@ const ONLINE_TIMEOUT_MINUTES = 3;
 // Endpoint GET Statistik Pengunjung
 app.get('/api/visitor-stats', async (req, res) => {
     try {
-        // SELECT juga kolom 'last_activity'
-        const { data, error } = await supabase
+        const now = new Date();
+        const cutoffTime = new Date(now.getTime() - ONLINE_TIMEOUT_MINUTES * 60 * 1000).toISOString();
+
+        // 1. Bersihkan sesi lama dari tabel online_sessions
+        //    (Ini bisa juga dilakukan oleh cron job terpisah untuk efisiensi)
+        const { error: cleanupError } = await supabase
+            .from('online_sessions')
+            .delete()
+            .lt('last_activity', cutoffTime);
+        if (cleanupError) console.error('Error cleaning up old online sessions:', cleanupError);
+
+        // 2. Hitung jumlah online_users yang masih aktif
+        const { count: currentOnlineUsers, error: countError } = await supabase
+            .from('online_sessions')
+            .select('*', { count: 'exact' }); // Menghitung baris yang tersisa (yaitu, aktif)
+        if (countError) throw countError;
+
+        // 3. Ambil baris statistik utama (total, today)
+        const { data: currentStats, error: fetchStatsError } = await supabase
             .from('visitor_stats')
-            .select('total_visitors, today_visitors, online_users, last_updated, last_activity, id')
+            .select('total_visitors, today_visitors, online_users, last_updated, id') // Tidak perlu last_activity di sini lagi
             .order('last_updated', { ascending: false })
             .limit(1)
             .single();
 
-        if (error && error.code !== 'PGRST116') { // PGRST116 berarti "tidak ditemukan"
-            throw error;
+        if (fetchStatsError && fetchStatsError.code !== 'PGRST116') {
+            throw fetchStatsError;
         }
 
-        let currentStats = data;
-        const now = new Date();
+        let mainStats = currentStats;
+        let changesMade = false;
+        let newTodayVisitors = mainStats ? mainStats.today_visitors : 0;
 
-        // Jika tidak ada data statistik, inisialisasi baris baru
-        if (!currentStats) {
-            console.log('No visitor stats found, initializing...');
-            const { data: newStats, error: initError } = await supabase
+        // Jika baris statistik utama tidak ada, inisialisasi
+        if (!mainStats) {
+            console.log('Main visitor stats row not found, initializing...');
+            const { data: newMainStats, error: initError } = await supabase
                 .from('visitor_stats')
                 .insert({
                     date: now.toISOString().split('T')[0],
                     total_visitors: 0,
                     today_visitors: 0,
-                    online_users: 0,
-                    last_updated: now.toISOString(),
-                    last_activity: now.toISOString() // Inisialisasi last_activity
+                    online_users: currentOnlineUsers, // Set online_users awal dari hitungan sesi
+                    last_updated: now.toISOString()
                 })
-                .select('total_visitors, today_visitors, online_users, last_updated, last_activity, id')
+                .select('total_visitors, today_visitors, online_users, last_updated, id')
                 .single();
             if (initError) throw initError;
-            currentStats = newStats;
+            mainStats = newMainStats;
+            changesMade = true;
         }
-
-        let changesMade = false;
-        let newTodayVisitors = currentStats.today_visitors;
-        let newOnlineUsers = currentStats.online_users;
 
         // Logika untuk mereset 'today_visitors' jika hari sudah berganti
         const todayString = now.toISOString().split('T')[0];
-        const lastUpdatedDateString = currentStats.last_updated ? new Date(currentStats.last_updated).toISOString().split('T')[0] : '';
+        const lastUpdatedDateString = mainStats.last_updated ? new Date(mainStats.last_updated).toISOString().split('T')[0] : '';
 
         if (lastUpdatedDateString !== todayString) {
             newTodayVisitors = 0;
             changesMade = true;
         }
 
-        // Logika untuk memperbarui 'online_users' berdasarkan timeout
-        // Ini adalah mekanisme "pembersihan" pasif. Idealnya didukung cron job.
-        const lastActivityTime = currentStats.last_activity ? new Date(currentStats.last_activity) : null;
-        if (lastActivityTime && (now - lastActivityTime) > ONLINE_TIMEOUT_MINUTES * 60 * 1000) {
-            // Jika aktivitas terakhir lebih dari X menit yang lalu, reset online_users
-            if (newOnlineUsers > 0) { // Hanya reset jika memang ada online users
-                console.log(`Resetting online_users from ${newOnlineUsers} to 0 due to inactivity.`);
-                newOnlineUsers = 0;
-                changesMade = true;
-            }
+        // Perbarui online_users di tabel visitor_stats utama dengan hitungan terbaru
+        if (mainStats.online_users !== currentOnlineUsers) {
+            mainStats.online_users = currentOnlineUsers;
+            changesMade = true;
         }
-        
-        // Lakukan update ke DB jika ada perubahan pada today_visitors atau online_users karena reset/timeout
+        if (newTodayVisitors !== mainStats.today_visitors) {
+            mainStats.today_visitors = newTodayVisitors;
+            changesMade = true;
+        }
+
         if (changesMade) {
-            const { error: updateError } = await supabase
+            const { error: updateMainStatsError } = await supabase
                 .from('visitor_stats')
                 .update({ 
-                    today_visitors: newTodayVisitors, 
-                    online_users: newOnlineUsers,
-                    last_updated: now.toISOString(), // Perbarui last_updated karena ada perubahan
-                    last_activity: now.toISOString() // Juga perbarui last_activity karena ada aktivitas GET
+                    today_visitors: mainStats.today_visitors, 
+                    online_users: mainStats.online_users,
+                    last_updated: now.toISOString()
                 })
-                .eq('id', currentStats.id);
-            if (updateError) {
-                console.error('Error updating visitor stats during GET cleanup:', updateError);
+                .eq('id', mainStats.id);
+            if (updateMainStatsError) {
+                console.error('Error updating main visitor stats during GET cleanup:', updateMainStatsError);
             }
-            // Update currentStats lokal agar responsnya sesuai
-            currentStats.today_visitors = newTodayVisitors;
-            currentStats.online_users = newOnlineUsers;
         }
 
-
         res.json({
-            totalVisitors: currentStats.total_visitors,
-            todayVisitors: currentStats.today_visitors,
-            onlineUsers: currentStats.online_users,
-            id: currentStats.id
+            totalVisitors: mainStats.total_visitors,
+            todayVisitors: mainStats.today_visitors,
+            onlineUsers: mainStats.online_users, // Kirim online_users yang sudah dihitung
+            id: mainStats.id // Kirim ID dari baris visitor_stats utama
         });
     } catch (err) {
         console.error('Error fetching visitor stats:', err.message);
@@ -172,63 +178,43 @@ app.get('/api/visitor-stats', async (req, res) => {
     }
 });
 
-// Endpoint untuk Menerima Heartbeat dari Frontend
+// --- Endpoint untuk Menerima Heartbeat dari Frontend ---
 app.post('/api/visitor-stats/heartbeat', async (req, res) => {
-    const { visitorStatsId } = req.body;
+    const { sessionId } = req.body; // Menerima sessionId dari frontend
 
-    if (!visitorStatsId) {
-        return res.status(400).json({ message: 'visitorStatsId diperlukan untuk heartbeat.' });
+    if (!sessionId) {
+        return res.status(400).json({ message: 'sessionId diperlukan untuk heartbeat.' });
     }
 
     try {
         const now = new Date();
-        
-        // Ambil data saat ini
-        const { data: currentStats, error: fetchError } = await supabase
-            .from('visitor_stats')
-            .select('online_users, last_activity')
-            .eq('id', visitorStatsId)
+        const ipAddress = req.ip; // Ambil IP dari request
+        const userAgent = req.headers['user-agent']; // Ambil user-agent
+
+        // UPSERT ke tabel online_sessions:
+        // Jika sessionId sudah ada, perbarui last_activity.
+        // Jika tidak ada, tambahkan baris baru.
+        const { data, error } = await supabase
+            .from('online_sessions')
+            .upsert(
+                { session_id: sessionId, last_activity: now.toISOString(), ip_address: ipAddress, user_agent: userAgent },
+                { onConflict: 'session_id', ignoreDuplicates: false }
+            )
+            .select('session_id') // Hanya perlu mengonfirmasi upsert
             .single();
 
-        if (fetchError) {
-            console.error('Error fetching current stats for heartbeat:', fetchError.message);
-            return res.status(404).json({ message: 'Statistik pengunjung tidak ditemukan.' });
-        }
+        if (error) throw error;
 
-        let newOnlineUsers = currentStats.online_users;
-        const lastActivityTime = currentStats.last_activity ? new Date(currentStats.last_activity) : null;
-        
-        // Jika online_users adalah 0 (misalnya, baru saja di-reset oleh timeout)
-        // dan ini adalah heartbeat baru, naikkan kembali menjadi 1.
-        // Ini adalah bagian kritis untuk memastikan user yang kembali setelah timeout dihitung.
-        if (newOnlineUsers === 0 && (!lastActivityTime || (now - lastActivityTime) > ONLINE_TIMEOUT_MINUTES * 60 * 1000)) {
-            newOnlineUsers = 1;
-            console.log(`Heartbeat: User returned after timeout, setting online_users to 1.`);
-        }
-
-
-        const { error: updateError } = await supabase
-            .from('visitor_stats')
-            .update({
-                online_users: newOnlineUsers, // Perbarui online_users berdasarkan logika di atas
-                last_activity: now.toISOString(), // Selalu perbarui timestamp aktivitas
-                last_updated: now.toISOString() // Perbarui last_updated juga karena ada aktivitas
-            })
-            .eq('id', visitorStatsId)
-            .single();
-
-        if (updateError) throw updateError;
-
-        res.json({ message: 'Heartbeat received and online status updated.', onlineUsers: newOnlineUsers });
+        res.json({ message: 'Heartbeat received.', sessionId: data.session_id });
     } catch (err) {
         console.error('Error processing heartbeat:', err.message);
         res.status(500).json({ message: 'Gagal memproses heartbeat.', error: err.message });
     }
 });
 
-// Endpoint POST/PUT Statistik Pengunjung (Digunakan hanya untuk initial increment total/today/online)
-app.post('/api/visitor-stats/update', async (req, res) => {
-    const { type, visitorStatsId } = req.body;
+// --- Endpoint untuk initial increment total/today (online_users dihitung dari sesi) ---
+app.post('/api/visitor-stats/increment-counts', async (req, res) => {
+    const { visitorStatsId } = req.body;
 
     if (!visitorStatsId) {
         return res.status(400).json({ message: 'visitorStatsId diperlukan.' });
@@ -238,80 +224,64 @@ app.post('/api/visitor-stats/update', async (req, res) => {
         const now = new Date();
         const { data: currentStats, error: fetchError } = await supabase
             .from('visitor_stats')
-            .select('total_visitors, today_visitors, online_users, last_updated, last_activity')
+            .select('total_visitors, today_visitors, last_updated') // Tidak perlu online_users di sini
             .eq('id', visitorStatsId)
             .single();
 
         if (fetchError) {
-            console.error('Error fetching current stats for update:', fetchError.message);
+            console.error('Error fetching current stats for increment-counts:', fetchError.message);
             return res.status(404).json({ message: 'Statistik pengunjung tidak ditemukan.' });
         }
 
         let newTotal = currentStats.total_visitors;
         let newToday = currentStats.today_visitors;
-        let newOnline = currentStats.online_users;
         
-        let updateRequired = false;
-
-        // Reset today_visitors jika hari sudah berganti
+        // Logika reset today_visitors jika hari sudah berganti
         const todayString = now.toISOString().split('T')[0];
         const lastUpdatedDateString = new Date(currentStats.last_updated).toISOString().split('T')[0];
 
         if (lastUpdatedDateString !== todayString) {
             newToday = 0;
-            updateRequired = true;
         }
 
-        if (type === 'increment_all') {
-            newTotal++;
-            newToday++;
-            // Logika untuk online_users: Naikkan hanya jika user dianggap "baru" online
-            // (misalnya, last_activity terlalu lama atau online_users adalah 0)
-            const lastActivityTime = currentStats.last_activity ? new Date(currentStats.last_activity) : null;
-            if (newOnline === 0 || (lastActivityTime && (now - lastActivityTime) > ONLINE_TIMEOUT_MINUTES * 60 * 1000)) {
-                newOnline = 1; // Set ke 1 jika baru online atau kembali online
-            }
-            updateRequired = true;
-        }
-        // Tipe 'decrement_online' tidak lagi diproses di sini, karena diganti oleh mekanisme timeout.
+        newTotal++; // Selalu tingkatkan total
+        newToday++; // Selalu tingkatkan today (karena ini adalah kunjungan pertama pada sesi ini)
 
-        if (updateRequired) {
-            const { data: updatedData, error: updateError } = await supabase
-                .from('visitor_stats')
-                .update({
-                    total_visitors: newTotal,
-                    today_visitors: newToday,
-                    online_users: newOnline, // Perbarui online_users
-                    last_updated: now.toISOString(),
-                    last_activity: now.toISOString() // Perbarui last_activity di sini juga
-                })
-                .eq('id', visitorStatsId)
-                .select('total_visitors, today_visitors, online_users')
-                .single();
+        const { data: updatedData, error: updateError } = await supabase
+            .from('visitor_stats')
+            .update({
+                total_visitors: newTotal,
+                today_visitors: newToday,
+                last_updated: now.toISOString() // Perbarui last_updated karena ada perubahan
+            })
+            .eq('id', visitorStatsId)
+            .select('total_visitors, today_visitors')
+            .single();
 
-            if (updateError) throw updateError;
+        if (updateError) throw updateError;
 
-            res.json({
-                message: 'Statistik pengunjung berhasil diperbarui.',
-                totalVisitors: updatedData.total_visitors,
-                todayVisitors: updatedData.today_visitors,
-                onlineUsers: updatedData.online_users
-            });
-        } else {
-            // Jika tidak ada update yang diperlukan (misalnya type tidak dikenali, atau online_users sudah benar)
-            res.json({
-                message: 'No update required for this type.',
-                totalVisitors: currentStats.total_visitors,
-                todayVisitors: currentStats.today_visitors,
-                onlineUsers: currentStats.online_users
-            });
-        }
+        // Setelah update, hitung online_users lagi untuk respons yang akurat
+        const { count: finalOnlineUsers, error: finalCountError } = await supabase
+            .from('online_sessions')
+            .select('*', { count: 'exact' })
+            .gt('last_activity', new Date(now.getTime() - ONLINE_TIMEOUT_MINUTES * 60 * 1000).toISOString()); // Hitung yang masih aktif
+        if (finalCountError) throw finalCountError;
+
+
+        res.json({
+            message: 'Counts incremented.',
+            totalVisitors: updatedData.total_visitors,
+            todayVisitors: updatedData.today_visitors,
+            onlineUsers: finalOnlineUsers // Kirim online_users yang akurat
+        });
 
     } catch (err) {
-        console.error('Error updating visitor stats:', err.message);
-        res.status(500).json({ message: 'Gagal memperbarui statistik pengunjung.', error: err.message });
+        console.error('Error incrementing visitor counts:', err.message);
+        res.status(500).json({ message: 'Gagal memperbarui hitungan pengunjung.', error: err.message });
     }
 });
+
+
 // GET semua halaman
 app.get('/api/pages', async (req, res) => {
   try {

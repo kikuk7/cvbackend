@@ -29,7 +29,6 @@ const pool = new Pool({
 // --- Konfigurasi Supabase Client ---
 // Mengambil URL dan Kunci Supabase dari variabel lingkungan
 const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabaseStorageBucket = process.env.SUPABASE_STORAGE_BUCKET;
 
 // Validasi keberadaan kunci Supabase sebelum inisialisasi

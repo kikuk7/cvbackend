@@ -74,6 +74,135 @@ const ALL_PAGE_COLUMNS = `
   excellence_image_1_url, excellence_image_2_url, excellence_image_3_url
 `;
 
+//visitor
+
+app.get('/api/visitor-stats', async (req, res) => {
+    try {
+        const { data, error } = await supabase
+            .from('visitor_stats')
+            .select('total_visitors, today_visitors, online_users, last_updated, id')
+            .order('last_updated', { ascending: false })
+            .limit(1)
+            .single();
+
+        if (error && error.code !== 'PGRST116') { // PGRST116 berarti "tidak ditemukan"
+            throw error;
+        }
+
+        let currentStats = data;
+
+        // Jika tidak ada data statistik, inisialisasi baris baru
+        if (!currentStats) {
+            console.log('No visitor stats found, initializing...');
+            const { data: newStats, error: initError } = await supabase
+                .from('visitor_stats')
+                .insert({
+                    date: new Date().toISOString().split('T')[0], // Tanggal hari ini YYYY-MM-DD
+                    total_visitors: 0,
+                    today_visitors: 0,
+                    online_users: 0,
+                    last_updated: new Date().toISOString()
+                })
+                .select('total_visitors, today_visitors, online_users, last_updated, id')
+                .single();
+            if (initError) throw initError;
+            currentStats = newStats;
+        }
+
+        // Cek dan reset today_visitors jika tanggal sudah berganti
+        const today = new Date().toISOString().split('T')[0];
+        const lastUpdatedDate = currentStats.last_updated ? new Date(currentStats.last_updated).toISOString().split('T')[0] : '';
+
+        if (lastUpdatedDate !== today) {
+            // Reset today_visitors di DB
+            const { error: updateError } = await supabase
+                .from('visitor_stats')
+                .update({ today_visitors: 0, last_updated: new Date().toISOString() })
+                .eq('id', currentStats.id); // Update berdasarkan ID baris
+            if (updateError) throw updateError;
+            currentStats.today_visitors = 0; // Update nilai lokal
+        }
+
+        res.json({
+            totalVisitors: currentStats.total_visitors, // Sesuaikan nama properti agar konsisten dengan frontend
+            todayVisitors: currentStats.today_visitors, // Sesuaikan nama properti
+            onlineUsers: currentStats.online_users,     // Sesuaikan nama properti
+            id: currentStats.id // Kirim ID juga
+        });
+    } catch (err) {
+        console.error('Error fetching visitor stats:', err.message);
+        res.status(500).json({ message: 'Gagal mengambil statistik pengunjung.', error: err.message });
+    }
+});
+app.post('/api/visitor-stats/update', async (req, res) => {
+    const { type, visitorStatsId } = req.body; // Menerima tipe update dan ID baris
+
+    if (!visitorStatsId) {
+        return res.status(400).json({ message: 'visitorStatsId diperlukan untuk memperbarui statistik.' });
+    }
+
+    try {
+        // Ambil data saat ini untuk menghindari race condition
+        const { data: currentStats, error: fetchError } = await supabase
+            .from('visitor_stats')
+            .select('total_visitors, today_visitors, online_users, last_updated')
+            .eq('id', visitorStatsId)
+            .single();
+
+        if (fetchError) {
+            console.error('Error fetching current stats for update:', fetchError.message);
+            return res.status(404).json({ message: 'Statistik pengunjung tidak ditemukan.' });
+        }
+
+        let newTotal = currentStats.total_visitors;
+        let newToday = currentStats.today_visitors;
+        let newOnline = currentStats.online_users;
+
+        // Pastikan today_visitors di-reset jika hari sudah berganti (double check)
+        const today = new Date().toISOString().split('T')[0];
+        const lastUpdatedDate = new Date(currentStats.last_updated).toISOString().split('T')[0];
+
+        if (lastUpdatedDate !== today) {
+            newToday = 0;
+        }
+
+        if (type === 'increment_all') {
+            newTotal++;
+            newToday++;
+            newOnline++;
+        } else if (type === 'decrement_online') {
+            newOnline = Math.max(0, newOnline - 1); // Pastikan tidak negatif
+        } else {
+            return res.status(400).json({ message: 'Tipe update tidak valid.' });
+        }
+
+        const { data: updatedData, error: updateError } = await supabase
+            .from('visitor_stats')
+            .update({
+                total_visitors: newTotal,
+                today_visitors: newToday,
+                online_users: newOnline,
+                last_updated: new Date().toISOString()
+            })
+            .eq('id', visitorStatsId)
+            .select('total_visitors, today_visitors, online_users')
+            .single();
+
+        if (updateError) throw updateError;
+
+        res.json({
+            message: 'Statistik pengunjung berhasil diperbarui.',
+            totalVisitors: updatedData.total_visitors,
+            todayVisitors: updatedData.today_visitors,
+            onlineUsers: updatedData.online_users
+        });
+
+    } catch (err) {
+        console.error('Error updating visitor stats:', err.message);
+        res.status(500).json({ message: 'Gagal memperbarui statistik pengunjung.', error: err.message });
+    }
+});
+
 // GET semua halaman
 app.get('/api/pages', async (req, res) => {
   try {

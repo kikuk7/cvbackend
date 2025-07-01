@@ -373,3 +373,23 @@ app.listen(port, () => {
   console.log(`Backend API berjalan di http://localhost:${port}`);
 });
 
+app.get('/api/visitor-stats', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('visitor_stats')
+      .select('*')
+      .limit(1)
+      .single()
+
+    if (error) throw error
+
+    res.json({
+      total: data.total,
+      today: data.today,
+      online: data.online
+    })
+  } catch (err) {
+    console.error('Gagal mengambil statistik visitor:', err)
+    res.status(500).json({ message: 'Internal server error' })
+  }
+})

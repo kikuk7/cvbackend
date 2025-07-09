@@ -285,52 +285,42 @@ app.post('/api/visitor-stats/increment-counts', async (req, res) => {
 
 
 // GET semua halaman
-// Gantikan GET /api/pages yang lama dengan ini
 app.get('/api/pages', async (req, res) => {
-    try {
-        // Gunakan Supabase Client dan hanya select kolom yang perlu
-        const { data, error } = await supabase
-            .from('pages')
-            .select('id, title, slug, created_at') // Ambil hanya yang perlu!
-            .order('id', { ascending: true });
-
-        if (error) throw error;
-        res.json(data);
-    } catch (err) {
-        console.error('Error fetching pages list:', err);
-        res.status(500).json({ message: 'Gagal mengambil daftar halaman.' });
-    }
+  try {
+    const result = await pool.query(`SELECT ${ALL_PAGE_COLUMNS} FROM pages ORDER BY id ASC`);
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error fetching pages:', err);
+    res.status(500).json({ message: 'Gagal mengambil halaman.' });
+  }
 });
 
 // GET halaman berdasarkan ID atau Slug
-// Gantikan GET /api/pages/:idOrSlug yang lama
 app.get('/api/pages/:idOrSlug', async (req, res) => {
-    const { idOrSlug } = req.params;
-    const isNumeric = !isNaN(parseInt(idOrSlug));
+  const { idOrSlug } = req.params;
+  let query;
+  let values;
 
-    try {
-        let query = supabase.from('pages').select(ALL_PAGE_COLUMNS); // ALL_PAGE_COLUMNS masih OK di sini
+  const numericId = parseInt(idOrSlug);
 
-        if (isNumeric) {
-            query = query.eq('id', idOrSlug);
-        } else {
-            query = query.eq('slug', idOrSlug);
-        }
+  if (!isNaN(numericId)) {
+    query = `SELECT ${ALL_PAGE_COLUMNS} FROM pages WHERE id = $1`;
+    values = [numericId];
+  } else {
+    query = `SELECT ${ALL_PAGE_COLUMNS} FROM pages WHERE slug = $1`;
+    values = [idOrSlug];
+  }
 
-        const { data, error } = await query.single(); // .single() lebih efisien utk 1 baris
-
-        if (error) {
-            // Jika tidak ditemukan, Supabase akan memberikan error dengan kode PGRST116
-            if (error.code === 'PGRST116') {
-                return res.status(404).json({ message: 'Halaman tidak ditemukan.' });
-            }
-            throw error;
-        }
-        res.json(data);
-    } catch (err) {
-        console.error('Error fetching page by ID/Slug:', err);
-        res.status(500).json({ message: 'Gagal mengambil halaman.' });
+  try {
+    const result = await pool.query(query, values);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Halaman tidak ditemukan.' });
     }
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Error fetching page by ID/Slug:', err);
+    res.status(500).json({ message: 'Gagal mengambil halaman.' });
+  }
 });
 
 // Endpoint untuk mengunggah gambar
